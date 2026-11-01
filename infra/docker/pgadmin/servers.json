@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "TechVerse (local)",
+      "Group": "TechVerse",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "techverse",
+      "Username": "techverse",
+      "SSLMode": "prefer"
+    }
+  }
+}

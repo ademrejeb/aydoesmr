@@ -1,0 +1,1337 @@
+// TechVerse Platform - Prisma schema (PostgreSQL)
+// Multi-tenant: every tenant-scoped table carries organizationId.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------- Enums -------------------------
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+enum ProjectType {
+  GENERAL
+  ENGINEERING
+  MARKETING
+  SALES
+  HR
+  OTHER
+}
+
+enum ProjectVisibility {
+  PRIVATE
+  INTERNAL
+  PUBLIC
+}
+
+enum TaskType {
+  EPIC
+  STORY
+  TASK
+  BUG
+  SUBTASK
+}
+
+enum SprintStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+enum ScanStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+// ------------------------- Users & Org -------------------------
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  fullName     String?
+  avatarUrl    String?
+  locale       String     @default("ar")
+  timezone     String     @default("Africa/Tunis")
+  role         String     @default("user")
+  status       String     @default("ACTIVE")
+  statusNote   String?
+  statusUntil  DateTime?
+  lastSeenAt   DateTime?
+  gitTokens    GitToken[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  memberships        OrganizationMember[]
+  teamMembers        TeamMember[]
+  ownedProjects      Project[]            @relation("ProjectOwner")
+  tasks              Task[]               @relation("TaskAssignee")
+  reportedTasks      Task[]               @relation("TaskReporter")
+  comments           Comment[]
+  conversations      ConversationMember[]
+  messages           Message[]
+  reactions          Reaction[]
+  invitesSent        Invite[]             @relation("InviteInviter")
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  devIssues          DevIssue[]
+  files              FileAttachment[]
+  pipelines          Pipeline[]           @relation("PipelineCreator")
+  pipelineRuns       PipelineRun[]        @relation("PipelineRunCreator")
+  aiProviders        AiProvider[]         @relation("AiProviderCreator")
+  aiActionRuns       AiActionRun[]        @relation("AiActionRunCreator")
+  timesheetEntries   TimesheetEntry[]
+  leaveBalances      LeaveBalance[]
+  leaveRequests      LeaveRequest[]
+  reviewedTimesheets TimesheetEntry[]     @relation("TimesheetReviewer")
+  reviewedLeaves     LeaveRequest[]       @relation("LeaveReviewer")
+  payrollRuns        PayrollRun[]         @relation("PayrollRunCreator")
+  serviceItemsCreated    ServiceItem[]      @relation("ServiceItemCreator")
+  serviceRequestsRequested ServiceRequest[] @relation("ServiceRequestRequester")
+  serviceRequestsAssigned ServiceRequest[] @relation("ServiceRequestAssignee")
+  serviceRequestsApproved  ServiceRequest[] @relation("ServiceRequestApprover")
+  incidentsRequested  Incident[]          @relation("IncidentRequester")
+  incidentsAssigned   Incident[]          @relation("IncidentAssignee")
+  articlesAuthored    KnowledgeArticle[]  @relation("ArticleAuthor")
+  serviceComments     ServiceComment[]     @relation("ServiceCommentAuthor")
+  refreshTokens       RefreshToken[]
+  sprintPlans         SprintPlan[]       @relation("SprintPlanCreator")
+}
+
+/// Rotating refresh tokens (one row per issued jti). Revoking a row invalidates
+/// the token; a revoked/rotated token showing up again is treated as theft and
+/// revokes the whole family (all of the user's active tokens).
+model RefreshToken {
+  id            String    @id // jti embedded in the refresh JWT
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issuedAt      DateTime  @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  replacedById  String?
+  userAgent     String?
+  ip            String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Organization {
+  id             String    @id @default(uuid())
+  name           String
+  slug           String    @unique
+  plan           String    @default("free")
+  billingEmail   String?
+  country        String?
+  currency       String    @default("TND")
+  locale         String    @default("ar")
+  timezone       String    @default("Africa/Tunis")
+  workWeekStart  Int       @default(1)
+  holidayCountry String?
+  holidayRegion  String?
+  trialEnd       DateTime?
+  status         String    @default("active")
+  subscriptionId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  members          OrganizationMember[]
+  departments      Department[]
+  teams            Team[]
+  projects         Project[]
+  tasks            Task[]
+  workflows        Workflow[]
+  sprints          Sprint[]
+  comments         Comment[]
+  conversations    Conversation[]
+  messages         Message[]
+  invites          Invite[]
+  calendarEvents   CalendarEvent[]
+  files            FileAttachment[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  billing          Billing?
+  repositories     DevRepository[]
+  scans            DevScan[]
+  issues           DevIssue[]
+  analysisConfigs  DevAnalysisConfig[]
+  gitRepositories  GitRepository[]
+  gitTokens        GitToken[]
+  pipelines        Pipeline[]
+  pipelineRuns     PipelineRun[]
+  aiProviders      AiProvider[]
+  aiActionRuns     AiActionRun[]
+  sprintPlans      SprintPlan[]
+  timesheetEntries TimesheetEntry[]
+  leaveTypes       LeaveType[]
+  leaveBalances    LeaveBalance[]
+  leaveRequests    LeaveRequest[]
+  companyOffDays   CompanyOffDay[]
+  serverConnections ServerConnection[]
+  deployedApps      DeployedApp[]
+  payrollRuns       PayrollRun[]
+  serviceItems      ServiceItem[]
+  serviceRequests   ServiceRequest[]
+  incidents         Incident[]
+  knowledgeArticles KnowledgeArticle[]
+  serviceComments   ServiceComment[]
+  slaPolicies       ServiceSlaPolicy[]
+
+  @@index([slug])
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           OrgRole  @default(MEMBER)
+  title          String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+// ------------------------- Teams -------------------------
+
+model Department {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teams        Team[]
+
+  @@index([organizationId])
+}
+
+model Team {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  departmentId   String?
+  createdAt      DateTime @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  members      TeamMember[]
+  projects     ProjectTeam[]
+  sprints      Sprint[]
+
+  @@index([organizationId])
+}
+
+model TeamMember {
+  id     String @id @default(uuid())
+  teamId String
+  userId String
+  role   String @default("member")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+// ------------------------- Projects -------------------------
+
+model Project {
+  id             String            @id @default(uuid())
+  organizationId String
+  ownerId        String
+  name           String
+  description    String?
+  key            String?
+  type           ProjectType       @default(GENERAL)
+  visibility     ProjectVisibility @default(PRIVATE)
+  status         String            @default("active")
+  startDate      DateTime?
+  dueDate        DateTime?
+  color          String            @default("#2563eb")
+  repoUrl        String?
+  settings       Json              @default("{}")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner            User             @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  teams            ProjectTeam[]
+  workflows        Workflow[]
+  sprints          Sprint[]
+  tasks            Task[]
+  repositories     DevRepository[]
+  devScans         DevScan[]
+  analysisConfigs  DevAnalysisConfig[]
+  gitRepositories  GitRepository[]
+  timesheetEntries TimesheetEntry[]
+
+  @@index([organizationId])
+  @@index([ownerId])
+}
+
+model ProjectTeam {
+  id        String @id @default(uuid())
+  projectId String
+  teamId    String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, teamId])
+}
+
+// ------------------------- Boards & Tasks -------------------------
+
+model Workflow {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String
+  name           String   @default("Board")
+  method         String   @default("kanban")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  columns      WorkflowColumn[]
+
+  @@unique([projectId, name])
+  @@index([organizationId])
+}
+
+model WorkflowColumn {
+  id         String  @id @default(uuid())
+  workflowId String
+  name       String
+  status     String
+  color      String? @default("#2563eb")
+  wipLimit   Int?
+  isBacklog  Boolean @default(false)
+  position   Int     @default(0)
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tasks    Task[]
+
+  @@unique([workflowId, name])
+  @@index([workflowId])
+}
+
+model Sprint {
+  id             String       @id @default(uuid())
+  organizationId String
+  projectId      String
+  teamId         String?
+  name           String
+  goal           String?
+  startDate      DateTime?
+  endDate        DateTime?
+  status         SprintStatus @default(PLANNING)
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team         Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  tasks        Task[]
+
+  @@index([organizationId, projectId])
+}
+
+model Task {
+  id             String       @id @default(uuid())
+  organizationId String
+  projectId      String
+  sprintId       String?
+  columnId       String?
+  epicId         String?
+  parentId       String?
+  assigneeId     String?
+  reporterId     String?
+  devIssueId     String?
+  title          String
+  description    String?
+  type           TaskType     @default(TASK)
+  status         String       @default("TODO")
+  priority       TaskPriority @default(MEDIUM)
+  storyPoints    Int?
+  order          Int          @default(0)
+  dueDate        DateTime?
+  estimateHours  Float?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint           Sprint?          @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  column           WorkflowColumn?  @relation(fields: [columnId], references: [id], onDelete: SetNull)
+  epic             Task?            @relation("TaskEpic", fields: [epicId], references: [id], onDelete: SetNull)
+  epics            Task[]           @relation("TaskEpic")
+  parent           Task?            @relation("Subtask", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks         Task[]           @relation("Subtask")
+  assignee         User?            @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reporter         User?            @relation("TaskReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  comments         Comment[]
+  files            FileAttachment[]
+  devIssue         DevIssue?        @relation(fields: [devIssueId], references: [id], onDelete: SetNull)
+  timesheetEntries TimesheetEntry[]
+
+  @@index([organizationId, projectId, status])
+  @@index([assigneeId])
+}
+
+model Comment {
+  id             String   @id @default(uuid())
+  organizationId String
+  taskId         String
+  authorId       String
+  body           String
+  mentions       Json     @default("[]")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  task         Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author       User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([organizationId])
+}
+
+// ------------------------- Chat -------------------------
+
+model Conversation {
+  id             String           @id @default(uuid())
+  organizationId String
+  name           String?
+  type           ConversationType @default(GROUP)
+  createdBy      String?
+  lastMessageAt  DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      ConversationMember[]
+  messages     Message[]
+
+  @@index([organizationId])
+}
+
+model ConversationMember {
+  id             String    @id @default(uuid())
+  conversationId String
+  userId         String
+  role           String    @default("MEMBER")
+  lastReadAt     DateTime?
+  unreadCount    Int       @default(0)
+  joinedAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String    @id @default(uuid())
+  organizationId String
+  conversationId String
+  senderId       String
+  kind           String    @default("TEXT")
+  body           String
+  mediaUrl       String?
+  mediaWidth     Int?
+  mediaHeight    Int?
+  mimeType       String?
+  replyToId      String?
+  deletedAt      DateTime?
+  mentionIds     String[]  @default([])
+  editedAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReply")
+  attachment   FileAttachment?
+  reactions    Reaction[]
+
+  @@index([conversationId, createdAt])
+  @@index([organizationId])
+  @@index([replyToId])
+}
+
+model Reaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+}
+
+// ------------------------- Calendar -------------------------
+
+model CalendarEvent {
+  id             String    @id @default(uuid())
+  organizationId String
+  title          String
+  description    String?
+  startsAt       DateTime
+  endsAt         DateTime?
+  allDay         Boolean   @default(false)
+  location       String?
+  type           String    @default("OTHER")
+  projectId      String?
+  creatorId      String
+  attendees      Json      @default("[]")
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, startsAt])
+}
+
+// ------------------------- Files -------------------------
+
+model FileAttachment {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  mimeType       String
+  size           Int
+  storageKey     String
+  taskId         String?
+  messageId      String?  @unique
+  uploadedById   String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  task         Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  message      Message?     @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  uploader     User         @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model Invite {
+  id             String    @id @default(uuid())
+  organizationId String
+  email          String
+  role           OrgRole   @default(MEMBER)
+  title          String?
+  token          String    @unique
+  invitedById    String
+  status         String    @default("PENDING")
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inviter      User         @relation("InviteInviter", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([token])
+}
+
+// ------------------------- Notifications -------------------------
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_UPDATED
+  COMMENT
+  MENTION
+  PROJECT_UPDATE
+  MEETING
+  SCAN_COMPLETED
+  INVITE
+  SYSTEM
+  PIPELINE_COMPLETED
+  PIPELINE_FAILED
+}
+
+model Notification {
+  id             String           @id @default(uuid())
+  organizationId String
+  userId         String
+  type           NotificationType
+  title          String
+  body           String?
+  link           String?
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([organizationId])
+}
+
+// ------------------------- Audit -------------------------
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json     @default("{}")
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+}
+
+// ------------------------- Billing -------------------------
+
+model Billing {
+  id               String    @id @default(uuid())
+  organizationId   String    @unique
+  plan             String    @default("free")
+  status           String    @default("active")
+  seats            Int       @default(1)
+  usageThisPeriod  Float     @default(0)
+  usageLimit       Float?
+  currentPeriodEnd DateTime?
+  subscriptionId   String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------- Development / TechDebt -------------------------
+
+model DevRepository {
+  id             String    @id @default(uuid())
+  organizationId String
+  projectId      String?
+  name           String
+  fullPath       String?
+  url            String?
+  provider       String    @default("other")
+  defaultBranch  String    @default("main")
+  language       String?
+  sizeKb         Int       @default(0)
+  techDebtRatio  Float?
+  token          String?
+  webhookSecret  String?
+  scanOnPush     Boolean   @default(false)
+  lastSyncAt     DateTime?
+  lastCommitSha  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  scans        DevScan[]
+
+  @@index([organizationId])
+  @@index([projectId])
+}
+
+model DevScan {
+  id             String     @id @default(uuid())
+  organizationId String
+  projectId      String?
+  repositoryId   String?
+  status         ScanStatus @default(PENDING)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  durationMs     Int?
+  filesScanned   Int?
+  linesAnalyzed  Int?
+  metrics        Json       @default("{}")
+  error          String?
+  createdAt      DateTime   @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  repository   DevRepository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+  issues       DevIssue[]
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model DevIssue {
+  id             String    @id @default(uuid())
+  organizationId String
+  scanId         String
+  filePath       String
+  lineNumber     Int?
+  columnStart    Int?
+  columnEnd      Int?
+  codeSnippet    String?
+  fix            Json?
+  message        String
+  severity       Severity  @default(MEDIUM)
+  category       String?
+  ruleId         String?
+  suggestion     String?
+  fingerprint    String?
+  isFixed        Boolean   @default(false)
+  fixedAt        DateTime?
+  assigneeId     String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scan         DevScan      @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  assignee     User?        @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  tasks        Task[]
+
+  @@index([organizationId, severity])
+  @@index([scanId])
+}
+
+model DevAnalysisConfig {
+  id             String  @id @default(uuid())
+  organizationId String
+  projectId      String?
+  config         Json?   @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, projectId])
+  @@index([organizationId])
+}
+
+// ------------------------- Hosted Git -------------------------
+
+model GitRepository {
+  id             String    @id @default(uuid())
+  organizationId String
+  projectId      String?
+  name           String
+  description    String?
+  visibility     String    @default("private")
+  storagePath    String
+  defaultBranch  String    @default("main")
+  sizeKb         Int       @default(0)
+  fileCount      Int       @default(0)
+  lastCommitSha  String?
+  lastPushAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  pipelines    Pipeline[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model GitToken {
+  id             String    @id @default(uuid())
+  organizationId String
+  userId         String
+  name           String
+  tokenHash      String
+  prefix         String
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  revokedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([tokenHash])
+}
+
+// ------------------------- CI/CD Pipelines -------------------------
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+model Pipeline {
+  id             String   @id @default(uuid())
+  organizationId String
+  repositoryId   String
+  name           String
+  description    String?
+  trigger        String   @default("manual") // manual | push
+  branch         String   @default("main")
+  status         String   @default("active") // active | disabled
+  steps          Json     @default("[]") // [{ id, name, command }]
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  repository   GitRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("PipelineCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  runs         PipelineRun[]
+
+  @@index([organizationId])
+  @@index([repositoryId])
+}
+
+model PipelineRun {
+  id             String    @id @default(uuid())
+  organizationId String
+  pipelineId     String
+  status         RunStatus @default(QUEUED)
+  trigger        String    @default("manual") // manual | push
+  branch         String    @default("main")
+  commitSha      String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  durationMs     Int?
+  steps          Json      @default("[]") // [{ id, name, command, status, startedAt, completedAt, durationMs, output }]
+  error          String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pipeline     Pipeline     @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("PipelineRunCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([pipelineId, createdAt])
+  @@index([status])
+}
+
+model AiProvider {
+  id              String    @id @default(uuid())
+  organizationId  String
+  name            String
+  type            String // openai | anthropic | google | groq | mistral | openrouter | azure | ollama | openai_compatible
+  baseUrl         String?
+  apiKeyEncrypted String? // AES-256-GCM ciphertext (iv.tag.cipher base64)
+  apiKeyHint      String? // last 4 chars of the key, for display
+  models          Json      @default("[]") // string[]  (auto-fetched + manual overrides)
+  defaultModel    String?
+  status          String    @default("active") // active | disabled
+  lastTestAt      DateTime?
+  lastTestStatus  String? // ok | fail
+  lastTestError   String?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AiProviderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, name])
+}
+
+model AiActionRun {
+  id             String    @id @default(uuid())
+  organizationId String
+  providerId     String?
+  providerName   String?
+  model          String?
+  action         String // optimize_dockerfile | optimize_pipeline | fix_scan_issues | explain_code
+  status         String    @default("completed") // completed | failed
+  input          Json // action-specific input
+  output         Json? // action-specific result (suggestions / diffs)
+  applied        Boolean   @default(false)
+  appliedAt      DateTime?
+  error          String?
+  durationMs     Int?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AiActionRunCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, createdAt])
+  @@index([action])
+}
+
+// ------------------------- Sprint planner (cahier de charge → tickets) ----
+
+model SprintPlan {
+  id             String    @id @default(uuid())
+  organizationId String
+  fileName       String
+  mimeType       String
+  charCount      Int       @default(0)
+  status         String    @default("GENERATED") // GENERATED | APPLIED | FAILED
+  error          String?
+  tickets        Json? // [{ title, description, type, priority, storyPoints, epic }]
+  projectId      String?
+  teamId         String?
+  sprintName     String?
+  sprintId       String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("SprintPlanCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, createdAt])
+}
+
+// ------------------------- Server / VPS connections -------------------------
+
+model ServerConnection {
+  id                  String    @id @default(uuid())
+  organizationId      String
+  label               String
+  host                String
+  port                Int       @default(22)
+  protocol            String    @default("ssh") // ssh | ftp | npm
+  username            String?
+  credentialEncrypted String? // AES-256-GCM ciphertext of the ssh key / password (base64)
+  credentialNonce     String? // AES-256-GCM iv for the credential (base64)
+  lastProbeAt         DateTime?
+  lastProbeOk         Boolean?
+  lastProbeError      String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apps         DeployedApp[]
+
+  @@index([organizationId])
+}
+
+model DeployedApp {
+  id             String   @id @default(uuid())
+  organizationId String
+  connectionId   String
+  label          String
+  url            String
+  probePath      String?
+  probeMethod    String? // GET | POST
+  lastCheckAt    DateTime?
+  lastStatus     String? // ok | fail
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection   ServerConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([connectionId])
+}
+
+// ------------------------- Timesheets & Leave -------------------------
+
+enum TimesheetStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model TimesheetEntry {
+  id             String          @id @default(uuid())
+  organizationId String
+  userId         String
+  workDate       DateTime
+  projectId      String?
+  taskId         String?
+  hours          Float           @default(8)
+  activity       String? // description of work performed
+  status         TimesheetStatus @default(DRAFT)
+  submittedAt    DateTime?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task         Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  reviewedBy   User?        @relation("TimesheetReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, userId, workDate])
+  @@index([organizationId, workDate])
+  @@index([userId, workDate])
+}
+
+model LeaveType {
+  id               String   @id @default(uuid())
+  organizationId   String
+  name             String
+  code             String
+  color            String   @default("#6366f1")
+  isPaid           Boolean  @default(true)
+  daysPerYear      Float    @default(25)
+  carryOverDays    Float    @default(0)
+  accrualPerMonth  Float? // if set, monthly accrual instead of yearly lump sum
+  requiresApproval Boolean  @default(true)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  balances     LeaveBalance[]
+  requests     LeaveRequest[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model LeaveBalance {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  typeId         String
+  year           Int
+  granted        Float    @default(0)
+  used           Float    @default(0)
+  pending        Float    @default(0)
+  carriedOver    Float    @default(0)
+  adjusted       Float    @default(0)
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         LeaveType    @relation(fields: [typeId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, typeId, year])
+  @@index([organizationId, userId])
+}
+
+model LeaveRequest {
+  id             String             @id @default(uuid())
+  organizationId String
+  userId         String
+  typeId         String
+  startDate      DateTime
+  endDate        DateTime
+  days           Float
+  reason         String?
+  status         LeaveRequestStatus @default(PENDING)
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         LeaveType    @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  reviewedBy   User?        @relation("LeaveReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([userId, startDate])
+}
+
+/**
+ * Days the company actually closes. Selected from the public-holiday feed by
+ * managers on the Holidays page; surfaced as "OFF" in the user timesheet.
+ */
+model CompanyOffDay {
+  id             String   @id @default(uuid())
+  organizationId String
+  date           DateTime // UTC midnight of the off day
+  name           String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, date])
+  @@index([organizationId, date])
+}
+
+// ------------------------- Payroll -------------------------
+
+enum PayrollRunStatus {
+  PENDING
+  PAID
+}
+
+model PayrollRun {
+  id             String            @id @default(uuid())
+  organizationId String
+  month          String // "YYYY-MM"
+  currency       String            @default("MAD")
+  status         PayrollRunStatus  @default(PENDING)
+  grossTotal     Float             @default(0)
+  netTotal       Float             @default(0)
+  entries        Json              @default("[]") // [{ memberId, memberName, hours, regularHours, overtimeHours, gross, bonus, net }]
+  createdById    String?
+  paidAt         DateTime?
+  notes          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("PayrollRunCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, month])
+  @@index([organizationId, status])
+}
+
+// ------------------------- Service Desk (ITSM) -------------------------
+
+enum ServicePriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum ServiceRequestStatus {
+  SUBMITTED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  FULFILLED
+  CANCELLED
+  CLOSED
+}
+
+enum IncidentStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ServiceEntityType {
+  REQUEST
+  INCIDENT
+  ARTICLE
+}
+
+/// A bookable service in the self-service catalog. `formSchema` drives the
+/// dynamic request form rendered by the web app:
+/// [{ key, label, type: text|textarea|number|date|select|checkbox, required, options? }]
+model ServiceItem {
+  id               String   @id @default(uuid())
+  organizationId   String
+  name             String
+  description      String
+  category         String // IT | ACCESS | FACILITIES | HR | FINANCE
+  icon             String? // lucide icon name
+  active           Boolean  @default(true)
+  requiresApproval Boolean  @default(true)
+  estimatedDays    Int?
+  sortOrder        Int      @default(0)
+  formSchema       Json     @default("[]")
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?            @relation("ServiceItemCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  requests     ServiceRequest[]
+
+  @@index([organizationId, active])
+  @@index([organizationId, category])
+}
+
+model ServiceRequest {
+  id             String               @id @default(uuid())
+  organizationId String
+  number         String // REQ-000001
+  itemId         String?
+  title          String
+  description    String
+  status         ServiceRequestStatus @default(SUBMITTED)
+  priority       ServicePriority      @default(P3)
+  formData       Json                 @default("{}")
+  requesterId    String?
+  requesterEmail String?
+  requesterName  String?
+  assigneeId     String?
+  approverId     String?
+  decisionNote   String?
+  rating         Int? // 1..5 satisfaction after fulfilment
+  submittedAt    DateTime             @default(now())
+  approvedAt     DateTime?
+  resolvedAt     DateTime?
+  closedAt       DateTime?
+  targetAt       DateTime? // estimated fulfilment date
+  dueAt          DateTime? // SLA target date
+  source         String               @default("portal") // portal | app
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  item         ServiceItem?      @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  requester    User?            @relation("ServiceRequestRequester", fields: [requesterId], references: [id], onDelete: SetNull)
+  assignee     User?            @relation("ServiceRequestAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  approver     User?            @relation("ServiceRequestApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  incidents    Incident[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([assigneeId])
+  @@index([requesterId])
+}
+
+model Incident {
+  id              String        @id @default(uuid())
+  organizationId  String
+  number          String // INC-000001
+  title           String
+  description     String
+  status          IncidentStatus @default(NEW)
+  priority        ServicePriority @default(P3)
+  category        String?
+  assigneeId      String?
+  requesterId     String?
+  requesterEmail  String?
+  requesterName   String?
+  linkedRequestId String?
+  resolution      String?
+  rootCause       String?
+  firstRespondedAt DateTime?
+  resolvedAt      DateTime?
+  closedAt        DateTime?
+  responseDueAt   DateTime?
+  resolveDueAt    DateTime?
+  responseBreached Boolean      @default(false)
+  resolveBreached  Boolean      @default(false)
+  reopenCount     Int           @default(0)
+  source          String        @default("portal")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignee      User?           @relation("IncidentAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  requester     User?           @relation("IncidentRequester", fields: [requesterId], references: [id], onDelete: SetNull)
+  linkedRequest ServiceRequest? @relation(fields: [linkedRequestId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([assigneeId])
+}
+
+model KnowledgeArticle {
+  id             String   @id @default(uuid())
+  organizationId String
+  title          String
+  slug           String
+  summary        String?
+  body           String
+  category       String   @default("GENERAL")
+  tags           Json     @default("[]")
+  views          Int      @default(0)
+  helpful        Int      @default(0)
+  notHelpful     Int      @default(0)
+  published      Boolean  @default(true)
+  incidentId     String?
+  authorId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User?           @relation("ArticleAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, category])
+}
+
+model ServiceComment {
+  id             String            @id @default(uuid())
+  organizationId String
+  entityType     ServiceEntityType
+  entityId       String
+  authorId       String?
+  authorName     String?
+  body           String
+  internal       Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User?         @relation("ServiceCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, entityType, entityId])
+  @@index([entityType, entityId])
+}
+
+/// Per-priority SLA targets. Missing rows fall back to built-in defaults.
+model ServiceSlaPolicy {
+  id                String          @id @default(uuid())
+  organizationId    String
+  priority          ServicePriority
+  name              String
+  responseMinutes   Int
+  resolveMinutes    Int
+  businessHoursOnly Boolean         @default(false)
+  active            Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, priority])
+}

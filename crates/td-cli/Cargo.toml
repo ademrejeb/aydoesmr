@@ -1,0 +1,21 @@
+[package]
+name = "td-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "tech-debt"
+path = "src/main.rs"
+
+[dependencies]
+td-common.workspace = true
+td-ast.workspace = true
+td-metrics.workspace = true
+td-rules.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+walkdir.workspace = true

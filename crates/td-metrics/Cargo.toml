@@ -1,0 +1,10 @@
+[package]
+name = "td-metrics"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+td-common.workspace = true
+td-ast.workspace = true
+serde.workspace = true
+thiserror.workspace = true

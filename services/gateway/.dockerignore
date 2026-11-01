@@ -1,0 +1,5 @@
+techdebt-gateway
+techdebt-gateway.exe
+.git
+*.log
+tests

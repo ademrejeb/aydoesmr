@@ -1,0 +1,18 @@
+{
+  "name": "techverse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TechVerse — AI-powered technical debt intelligence platform",
+  "scripts": {
+    "dev": "npm --prefix techdebt-platform run dev",
+    "build": "npm --prefix techdebt-platform run build",
+    "lint": "npm --prefix techdebt-platform run lint",
+    "start": "npm --prefix techdebt-platform run start",
+    "api:dev": "npm --prefix services/api run start:dev",
+    "api:build": "npm --prefix services/api run build",
+    "api:typecheck": "npm --prefix services/api run typecheck",
+    "db:migrate": "npm --prefix services/api run prisma:migrate",
+    "db:seed": "npm --prefix services/api run prisma:seed",
+    "db:studio": "npm --prefix services/api run prisma:studio"
+  }
+}

@@ -1,0 +1,145 @@
+name: techverse
+
+services:
+  # ---------------------------------------------------------------------------
+  # Database + database UI
+  #
+  # The database lives in the named `postgres_data` volume, never in the repo.
+  # Open http://localhost:5050 (pgAdmin) to inspect it. The server is
+  # pre-registered; the password is `techverse_dev` in local development.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: techverse-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-techverse}
+      POSTGRES_USER: ${POSTGRES_USER:-techverse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techverse_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-techverse} -d ${POSTGRES_DB:-techverse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: techverse-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@techverse.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./infra/docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: techverse-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Application services
+  # ---------------------------------------------------------------------------
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    container_name: techverse-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: techverse-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-techverse}:${POSTGRES_PASSWORD:-techverse_dev}@postgres:5432/${POSTGRES_DB:-techverse}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production}
+      JWT_ACCESS_TTL: "900s"
+      JWT_REFRESH_TTL: "7d"
+      GATEWAY_URL: http://gateway:8080
+      CORS_ORIGIN: http://localhost:3000
+      PORT: "3001"
+      WS_URL: http://localhost:8092
+      AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  websocket:
+    build:
+      context: ./services/websocket
+      dockerfile: Dockerfile
+    container_name: techverse-websocket
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    environment:
+      PORT: "8092"
+      REDIS_URL: redis://redis:6379
+      API_INTERNAL_URL: http://api:3001
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./techdebt-platform
+      dockerfile: Dockerfile
+    container_name: techverse-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      NEXT_PUBLIC_WS_URL: ws://localhost:8092
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  redis_data:

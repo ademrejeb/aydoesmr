@@ -1,0 +1,12 @@
+import { Module, forwardRef } from "@nestjs/common"
+import { ProjectsService } from "./projects.service"
+import { ProjectsController } from "./projects.controller"
+import { AgileModule } from "../agile/agile.module"
+
+@Module({
+  imports: [forwardRef(() => AgileModule)],
+  providers: [ProjectsService],
+  controllers: [ProjectsController],
+  exports: [ProjectsService],
+})
+export class ProjectsModule {}

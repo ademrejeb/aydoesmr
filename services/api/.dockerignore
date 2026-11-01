@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+*.log
+.env
+.pgdata
+api.stdout.log
+api.stderr.log
+coverage
