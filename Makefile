@@ -16,7 +16,7 @@ help:
 	@echo "  make lint        Run clippy and rustfmt checks"
 	@echo "  make graphify    Build a local code knowledge graph"
 	@echo ""
-	@echo "  pgAdmin: http://localhost:5050  (admin@techverse.local / admin)"
+	@echo "  pgAdmin: http://localhost:5050  (admin@techverse.dev / admin)"
 
 up:
 	docker compose up -d --build
@@ -34,10 +34,10 @@ db-shell:
 	docker compose exec postgres psql -U techverse -d techverse
 
 db-migrate:
-	npm --prefix services/api run prisma:migrate
+	docker compose exec -T api npx prisma migrate deploy
 
 db-seed:
-	npm --prefix services/api run prisma:seed
+	docker compose exec -T api npx prisma db seed
 
 db-studio:
 	npm --prefix services/api run prisma:studio

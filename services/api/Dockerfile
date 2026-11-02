@@ -23,4 +23,4 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/tsconfig.json ./tsconfig.json
 EXPOSE 3001
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]

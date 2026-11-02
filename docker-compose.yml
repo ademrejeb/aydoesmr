@@ -33,10 +33,9 @@ services:
     ports:
       - "5050:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@techverse.local}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@techverse.dev}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
-      PGADMIN_CONFIG_SERVER_MODE: "False"
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./infra/docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
@@ -68,7 +67,8 @@ services:
     container_name: techverse-gateway
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      # 8080 is often taken by other local stacks; 8081 is the host port only.
+      - "8081:8080"
     environment:
       REDIS_URL: redis://redis:6379
     depends_on:
@@ -86,7 +86,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-techverse}:${POSTGRES_PASSWORD:-techverse_dev}@postgres:5432/${POSTGRES_DB:-techverse}
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-8f3c1d7a9b2e4f6a}
       JWT_ACCESS_TTL: "900s"
       JWT_REFRESH_TTL: "7d"
       GATEWAY_URL: http://gateway:8080
@@ -117,7 +117,7 @@ services:
       PORT: "8092"
       REDIS_URL: redis://redis:6379
       API_INTERNAL_URL: http://api:3001
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-8f3c1d7a9b2e4f6a}
     depends_on:
       redis:
         condition: service_healthy

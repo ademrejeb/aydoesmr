@@ -55,7 +55,7 @@ When `graphify-out/graph.json` exists, answer architecture questions with
 | --- | --- |
 | `crates/` | Rust workspace: AST parsing, metrics, rules, CLI (`td-cli`) |
 | `services/api/` | NestJS API + Prisma + Socket.IO (port 3001) |
-| `services/gateway/` | Go analysis gateway (port 8080) |
+| `services/gateway/` | Go analysis gateway (port 8080, host 8081) |
 | `services/websocket/` | Standalone realtime service (port 8092) |
 | `services/notifications/` | Notification worker |
 | `services/ai-planner/` | Python AI planner |

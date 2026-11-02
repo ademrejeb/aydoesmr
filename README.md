@@ -26,9 +26,9 @@ docker compose up -d --build
 | Dashboard | <http://localhost:3000> |
 | API | <http://localhost:3001/api> |
 | API health | <http://localhost:3001/api/health> |
-| Go gateway | <http://localhost:8080> |
+| Go gateway | <http://localhost:8081> (container port 8080) |
 | WebSocket | <http://localhost:8092> |
-| **pgAdmin** | <http://localhost:5050> (`admin@techverse.local` / `admin`) |
+| **pgAdmin** | <http://localhost:5050> (`admin@techverse.dev` / `admin`) |
 | Postgres | `localhost:5432` (`techverse` / `techverse_dev`) |
 
 The API container applies Prisma migrations on boot. Seed demo data with:
@@ -36,6 +36,10 @@ The API container applies Prisma migrations on boot. Seed demo data with:
 ```bash
 make db-seed
 ```
+
+That creates **TechVerse Studio** with six users (`owner@techverse.dev`,
+`admin@`, `manager@`, `member@`, `viewer@`, `contractor@techverse.dev`), all with
+the password `DemoPass123!`. Log in at <http://localhost:3000/login>.
 
 Stop everything with `docker compose down` (volumes are kept). To wipe the local
 database: `docker compose down -v`.

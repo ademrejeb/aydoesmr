@@ -13,11 +13,18 @@ docker compose up -d postgres pgadmin
 | Service | URL / port | Credentials |
 | --- | --- | --- |
 | Postgres | `localhost:5432` | db `techverse`, user `techverse`, password `techverse_dev` |
-| pgAdmin | <http://localhost:5050> | `admin@techverse.local` / `admin` |
+| pgAdmin | <http://localhost:5050> | `admin@techverse.dev` / `admin` |
 | Prisma Studio | <http://localhost:5555> | `make db-studio` |
 
-The pgAdmin server is pre-registered as **TechVerse (local)**. The first time you
-expand it, enter the database password `techverse_dev` and tick *Save password*.
+The pgAdmin server is pre-registered as **TechVerse (local)**. Log in to pgAdmin
+with `admin@techverse.dev` / `admin`, then the first time you expand the server
+enter the database password `techverse_dev` and tick *Save password*.
+
+## Demo accounts
+
+`make db-seed` creates one organization (**TechVerse Studio**) and six users:
+`owner@`, `admin@`, `manager@`, `member@`, `viewer@` and `contractor@techverse.dev`,
+all with the password `DemoPass123!`.
 
 ## Connection string
 
@@ -31,17 +38,18 @@ you.
 
 ## Schema and migrations
 
-The API owns the schema through Prisma:
+The API owns the schema through Prisma. The commands below run inside the `api`
+container, so they work on a fresh clone with no host `npm install`:
 
 ```bash
-# Apply pending migrations (creates the DB objects)
+# Apply pending migrations (the api container also does this on boot)
 make db-migrate
 
 # Seed demo data
 make db-seed
 
 # Optional: service-desk demo data
-npm --prefix services/api run prisma:seed:service-desk
+docker compose exec -T api npx ts-node prisma/seed-service-desk.ts
 ```
 
 The API container runs `prisma migrate deploy` automatically on boot, so
@@ -79,8 +87,7 @@ Destroys local data only; the repository is untouched.
 
 ```bash
 docker compose down -v          # removes the postgres_data volume
-docker compose up -d postgres pgadmin
-make db-migrate
+docker compose up -d --build    # api re-applies migrations on boot
 make db-seed
 ```
 
@@ -95,9 +102,19 @@ Docker service is the only supported local database now.
 
 ## Troubleshooting
 
-**Port 5432 already in use** — an old Postgres service is running. Stop it, or
-change the host port in `docker-compose.yml` (`"5433:5432"`) and update
-`DATABASE_URL`.
+**Port 5432 already in use** — a native PostgreSQL install is running. On Windows
+that is usually the `postgresql-x64-18` service; check with
+`Get-NetTCPConnection -LocalPort 5432` and look at the owning process. Stop and
+disable it from an **elevated** shell so Docker can own the port:
+
+```powershell
+Stop-Service postgresql-x64-18 -Force
+Set-Service postgresql-x64-18 -StartupType Disabled
+```
+
+Re-enable it later with `Set-Service postgresql-x64-18 -StartupType Automatic`.
+Alternatively change the host port in `docker-compose.yml` (`"5434:5432"`) and
+update `DATABASE_URL`.
 
 **`P1001: Can't reach database server`** — wait for the healthcheck:
 `docker compose ps` should show `healthy`. Then retry.
