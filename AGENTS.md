@@ -45,8 +45,8 @@ Levels: `lite`, `full` (default), `ultra`. See
 ## Graphify: query the codebase as a graph
 
 When `graphify-out/graph.json` exists, answer architecture questions with
-`graphify query "<question>"` instead of grepping blindly. Build the graph with
-`make graphify` (or `graphify . --no-viz`). See
+`python -m graphify query "<question>"` instead of grepping blindly. Build the
+graph with `make graphify` (code-only, no API key). See
 `.opencode/skills/graphify/SKILL.md`.
 
 ## Repository map

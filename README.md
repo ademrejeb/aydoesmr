@@ -162,8 +162,8 @@ This repository ships two OpenCode skills and a root `AGENTS.md`:
   graph and query it for architecture questions instead of grepping blindly.
 
 ```bash
-make graphify                          # build graphify-out/ (git-ignored)
-graphify query "How does auth work?"   # query it
+make graphify                                     # code graph (no API key)
+python -m graphify query "How does auth work?"    # query it
 ```
 
 ---

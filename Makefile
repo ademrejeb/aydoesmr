@@ -70,5 +70,7 @@ web-dev:
 api-dev:
 	npm --prefix services/api run start:dev
 
+# Code-only: local AST, no LLM key needed. Add docs/images with
+# `python -m graphify . --no-viz` plus an API key.
 graphify:
-	graphify . --no-viz
+	python -m graphify . --no-viz --code-only

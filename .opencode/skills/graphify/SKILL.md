@@ -27,32 +27,47 @@ Use a graph when:
 For a single "where is X defined" lookup, use `grep`/`Read` directly. Building a
 graph for one lookup is slower than searching.
 
-## Install (Windows)
+## Install
 
 ```powershell
 py -m pip install --upgrade graphifyy
-graphify --version
+python -m graphify --version
 ```
 
-If `graphify` is not on `PATH`, use `py -m graphify`.
+The package installs a `graphify` console script. If it is not on `PATH` (the
+usual case on Windows), call the module instead: `python -m graphify`. Every
+command below works with either form; `make graphify` uses `python -m graphify`.
+
+To copy the full upstream skill into your global agent config:
+
+```powershell
+python -m graphify install --platform opencode
+```
+
+This repository already ships a scoped version at
+`.opencode/skills/graphify/SKILL.md`, so the global install is optional.
 
 ## Build the graph
 
 From the repository root:
 
 ```powershell
-# Code only, no HTML (fast; what CI / local agents should use)
-graphify . --no-viz
+# Code only, no HTML, no LLM key (local AST; what `make graphify` runs)
+python -m graphify . --no-viz --code-only
 
 # Full pipeline with the interactive graph.html
-graphify .
+python -m graphify .
 
 # Incremental after code changes
-graphify . --update
+python -m graphify . --update
 
 # Deep extraction (more INFERRED edges, slower)
-graphify . --mode deep
+python -m graphify . --mode deep
 ```
+
+Without `--code-only`, docs, PDFs and images are sent through an LLM and need
+one of `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`DEEPSEEK_API_KEY` or `--backend`. The code graph never needs a key.
 
 `make graphify` runs the fast path. Output lands in `graphify-out/` and is
 git-ignored: regenerate it, never commit it.
