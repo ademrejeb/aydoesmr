@@ -41,6 +41,17 @@ function isPrivateAddress(address: string): boolean {
   }
   if (net.isIPv6(address)) {
     const normalized = address.toLowerCase()
+    // DNS commonly returns IPv4-mapped IPv6 addresses for dual-stack hosts.
+    // Treat the embedded IPv4 address with the same rules instead of letting
+    // ::ffff:127.0.0.1 (and friends) through.
+    const mapped = normalized.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/)
+    if (mapped) return isPrivateAddress(mapped[1])
+    const mappedHex = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+    if (mappedHex) {
+      const high = Number.parseInt(mappedHex[1], 16)
+      const low = Number.parseInt(mappedHex[2], 16)
+      return isPrivateAddress(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`)
+    }
     return (
       normalized === "::1" ||
       normalized === "::" ||
@@ -84,7 +95,9 @@ export class AgentFactoryService {
       this.config.get<string>("AGENT_FACTORY_ALLOW_PRIVATE") === "true" ||
       this.config.get<string>("NODE_ENV") !== "production"
     if (!allowPrivate) {
-      const host = url.hostname
+      // WHATWG URL keeps literal IPv6 hostnames in brackets; strip them so
+      // net.isIP/dns.lookup see the address itself and public IPv6 works.
+      const host = url.hostname.replace(/^\[|\]$/g, "")
       const addresses = net.isIP(host)
         ? [{ address: host }]
         : await dns.lookup(host, { all: true }).catch(() => [])
@@ -205,6 +218,10 @@ export class AgentFactoryService {
     const conn = await this.find(organizationId, connectionId)
     const started = Date.now()
     try {
+      // Re-check at request time: a stored hostname can be re-pointed after
+      // the connection was created. This does not fully close DNS rebinding,
+      // but it rejects a host that already resolves to a private address.
+      await this.assertBaseUrl(conn.baseUrl)
       const res = await fetch(
         `${conn.baseUrl}/api/v1/gateway/agents/${encodeURIComponent(conn.agentId)}`,
         {
@@ -263,6 +280,7 @@ export class AgentFactoryService {
     if (conn.status !== "active") {
       throw new BadRequestException("This agent connection is disabled")
     }
+    await this.assertBaseUrl(conn.baseUrl)
     const raw = JSON.stringify(dto.input ?? {})
     if (Buffer.byteLength(raw, "utf8") > MAX_INPUT_BYTES) {
       throw new BadRequestException("Agent input is too large (max 128 KB)")

@@ -26,6 +26,8 @@ export interface AuthResponse {
   user: AuthUser
   accessToken: string
   expiresIn: number
+  /** Present on Basacore sign-in: the tenant organization selected server-side. */
+  organizationId?: string | null
 }
 
 export interface Organization {

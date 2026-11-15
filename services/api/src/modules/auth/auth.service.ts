@@ -363,11 +363,23 @@ export class AuthService {
       })
       organizationId = org.id
     } else {
-      const first = await this.prisma.organizationMember.findFirst({
-        where: { userId: user.id },
-        orderBy: { createdAt: "asc" },
-      })
-      organizationId = first?.organizationId ?? null
+      // Prefer the organization that corresponds to the Basacore tenant the
+      // user signed into, but only when they are actually a member of it.
+      // Existing users without that mapping keep the previous deterministic
+      // fallback (oldest membership) instead of being dropped into an org they
+      // cannot access.
+      const tenantMembership = tenantSlug
+        ? await this.prisma.organizationMember.findFirst({
+            where: { userId: user.id, organization: { slug: tenantSlug } },
+          })
+        : null
+      const membership =
+        tenantMembership ??
+        (await this.prisma.organizationMember.findFirst({
+          where: { userId: user.id },
+          orderBy: { createdAt: "asc" },
+        }))
+      organizationId = membership?.organizationId ?? null
     }
 
     await this.prisma.auditLog.create({

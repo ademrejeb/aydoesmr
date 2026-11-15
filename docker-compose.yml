@@ -83,6 +83,10 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3001"
+    # Basacore runs outside this compose file. Docker Desktop resolves
+    # host.docker.internal automatically; Linux needs the explicit gateway.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-techverse}:${POSTGRES_PASSWORD:-techverse_dev}@postgres:5432/${POSTGRES_DB:-techverse}
       REDIS_URL: redis://redis:6379

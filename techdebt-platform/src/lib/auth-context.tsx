@@ -24,7 +24,7 @@ interface AuthContextValue {
   currentOrg: Organization | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
-  loginWithTokens: (auth: { user: AuthUser; accessToken: string }) => Promise<void>
+  loginWithTokens: (auth: { user: AuthUser; accessToken: string; organizationId?: string | null }) => Promise<void>
   register: (email: string, password: string, fullName?: string, locale?: string, inviteToken?: string) => Promise<void>
   logout: () => void
   setOrganization: (org: Organization) => void
@@ -66,12 +66,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => onSessionTokenChange(null)
   }, [])
 
-  const refreshOrganizations = useCallback(async (tok: string) => {
+  const refreshOrganizations = useCallback(async (tok: string, preferredOrgId?: string | null) => {
     const orgs = await api.listOrganizations(tok)
     setOrganizations(orgs)
+    const preferred = preferredOrgId ? orgs.find((o) => o.id === preferredOrgId) : null
     const savedOrgId = safeGet(ORG_KEY)
     const saved = savedOrgId ? orgs.find((o) => o.id === savedOrgId) : null
-    const next = saved ?? orgs[0] ?? null
+    const next = preferred ?? saved ?? orgs[0] ?? null
     setCurrentOrg(next)
     if (next) window.localStorage.setItem(ORG_KEY, next.id)
     return orgs
@@ -124,9 +125,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const loginWithTokens = useCallback(
-    async (auth: { user: AuthUser; accessToken: string }) => {
+    async (auth: { user: AuthUser; accessToken: string; organizationId?: string | null }) => {
       applyAuth(auth)
-      await refreshOrganizations(auth.accessToken)
+      await refreshOrganizations(auth.accessToken, auth.organizationId)
     },
     [applyAuth, refreshOrganizations]
   )
