@@ -94,6 +94,12 @@ services:
       PORT: "3001"
       WS_URL: http://localhost:8092
       AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      BASACORE_ISSUER: ${BASACORE_ISSUER:-http://localhost:8000}
+      BASACORE_INTERNAL_ISSUER: ${BASACORE_INTERNAL_ISSUER:-http://host.docker.internal:8000}
+      BASACORE_CLIENT_ID: ${BASACORE_CLIENT_ID:-}
+      BASACORE_CLIENT_SECRET: ${BASACORE_CLIENT_SECRET:-}
+      BASACORE_REDIRECT_URI: ${BASACORE_REDIRECT_URI:-http://localhost:3000/auth/basacore/callback}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,13 +134,22 @@ services:
     build:
       context: ./techdebt-platform
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8092}
+        NEXT_PUBLIC_BASACORE_ISSUER: ${NEXT_PUBLIC_BASACORE_ISSUER:-}
+        NEXT_PUBLIC_BASACORE_CLIENT_ID: ${NEXT_PUBLIC_BASACORE_CLIENT_ID:-}
+        NEXT_PUBLIC_BASACORE_TENANT_HINT: ${NEXT_PUBLIC_BASACORE_TENANT_HINT:-}
     container_name: techverse-web
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3001/api
-      NEXT_PUBLIC_WS_URL: ws://localhost:8092
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8092}
+      NEXT_PUBLIC_BASACORE_ISSUER: ${NEXT_PUBLIC_BASACORE_ISSUER:-}
+      NEXT_PUBLIC_BASACORE_CLIENT_ID: ${NEXT_PUBLIC_BASACORE_CLIENT_ID:-}
+      NEXT_PUBLIC_BASACORE_TENANT_HINT: ${NEXT_PUBLIC_BASACORE_TENANT_HINT:-}
     depends_on:
       api:
         condition: service_healthy

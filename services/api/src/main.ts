@@ -67,6 +67,7 @@ async function bootstrap() {
   app.use("/api/auth/login", authLimiter)
   app.use("/api/auth/register", authLimiter)
   app.use("/api/auth/refresh", authLimiter)
+  app.use("/api/auth/basacore/exchange", authLimiter)
 
   // Swagger: open in development, opt-in in production (SWAGGER_ENABLED=true).
   if (!isProduction || config.get<string>("SWAGGER_ENABLED") === "true") {

@@ -1,11 +1,19 @@
-import { ConflictException, Injectable, Logger, UnauthorizedException } from "@nestjs/common"
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from "@nestjs/common"
 import { JwtService } from "@nestjs/jwt"
 import { ConfigService } from "@nestjs/config"
-import { randomUUID } from "node:crypto"
+import { createPublicKey, randomUUID } from "node:crypto"
+import * as jwt from "jsonwebtoken"
 import { PrismaService } from "../../prisma/prisma.service"
 import { OrganizationsService } from "../organizations/organizations.service"
 import { MailService } from "../../mail/mail.service"
-import { RegisterDto, LoginDto } from "./dto"
+import { BasacoreExchangeDto, RegisterDto, LoginDto } from "./dto"
 import * as bcrypt from "bcryptjs"
 import type { SignOptions } from "jsonwebtoken"
 import type { AuthUser } from "../../common/interfaces/authenticated-request.interface"
@@ -44,6 +52,11 @@ let dummyPasswordHash: string | null = null
 function getDummyPasswordHash(): string {
   if (!dummyPasswordHash) dummyPasswordHash = bcrypt.hashSync(randomUUID(), 12)
   return dummyPasswordHash
+}
+
+interface JwksCacheEntry {
+  fetchedAt: number
+  keys: Array<Record<string, unknown>>
 }
 
 const MAX_LOGIN_FAILURES = 5
@@ -236,6 +249,199 @@ export class AuthService {
 
     const tokens = await this.issueTokens(user, meta)
     return { user: this.sanitize(user), ...tokens }
+  }
+
+  private jwksCache: JwksCacheEntry | null = null
+
+  private async basacoreJwks(issuer: string): Promise<Array<Record<string, unknown>>> {
+    const now = Date.now()
+    if (this.jwksCache && now - this.jwksCache.fetchedAt < 5 * 60_000) {
+      return this.jwksCache.keys
+    }
+    const res = await fetch(`${issuer}/.well-known/jwks.json`, {
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) throw new ServiceUnavailableException("Basacore JWKS is unavailable")
+    const body = (await res.json()) as { keys?: Array<Record<string, unknown>> }
+    const keys = Array.isArray(body.keys) ? body.keys : []
+    if (keys.length === 0) throw new ServiceUnavailableException("Basacore JWKS returned no keys")
+    this.jwksCache = { fetchedAt: now, keys }
+    return keys
+  }
+
+  private async verifyBasacoreIdToken(
+    idToken: string,
+    issuer: string,
+    jwksBase: string,
+    audience: string,
+    nonce?: string
+  ): Promise<Record<string, unknown>> {
+    const decoded = jwt.decode(idToken, { complete: true })
+    if (!decoded || typeof decoded === "string") {
+      throw new UnauthorizedException("Basacore returned an invalid ID token")
+    }
+    const header = decoded.header as { kid?: string; alg?: string }
+    if (header.alg !== "RS256") {
+      throw new UnauthorizedException("Basacore ID token must use RS256")
+    }
+    const keys = await this.basacoreJwks(jwksBase)
+    const candidates = header.kid ? keys.filter((key) => key.kid === header.kid) : keys
+    if (candidates.length === 0) {
+      throw new UnauthorizedException("Basacore signing key not found")
+    }
+    let payload: Record<string, unknown> | null = null
+    for (const jwk of candidates) {
+      try {
+        const publicKey = createPublicKey({ key: jwk as never, format: "jwk" })
+        payload = jwt.verify(idToken, publicKey, {
+          algorithms: ["RS256"],
+          issuer,
+          audience,
+        }) as Record<string, unknown>
+        break
+      } catch {
+        // Try the next key; an unrelated rotation must not fail the request.
+      }
+    }
+    if (!payload) throw new UnauthorizedException("Basacore ID token verification failed")
+    if (nonce && payload.nonce !== nonce) {
+      throw new UnauthorizedException("Basacore nonce mismatch")
+    }
+    if (payload.email_verified === false) {
+      throw new UnauthorizedException("Basacore account email is not verified")
+    }
+    return payload
+  }
+
+  private async provisionBasacoreUser(payload: Record<string, unknown>) {
+    const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : ""
+    if (!email) throw new UnauthorizedException("Basacore did not return an email address")
+    const fullName = typeof payload.name === "string" ? payload.name.slice(0, 200) : null
+    const tenantSlug = typeof payload.tenant_slug === "string" ? payload.tenant_slug : null
+
+    let user = await this.prisma.user.findUnique({ where: { email } })
+    let created = false
+    if (!user) {
+      const unusable = await bcrypt.hash(randomUUID() + randomUUID(), 12)
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          passwordHash: unusable,
+          fullName,
+          locale: "ar",
+        },
+      })
+      created = true
+    }
+
+    const membershipCount = await this.prisma.organizationMember.count({
+      where: { userId: user.id },
+    })
+    let organizationId: string | null = null
+    if (membershipCount === 0) {
+      const baseName = tenantSlug
+        ? tenantSlug.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+        : `${fullName ?? email.split("@")[0]} Workspace`
+      const baseSlug =
+        (tenantSlug ?? `${fullName ?? email.split("@")[0]}-workspace`)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "workspace"
+      let slug = baseSlug
+      let suffix = 1
+      while (await this.prisma.organization.findUnique({ where: { slug } })) {
+        suffix += 1
+        slug = `${baseSlug}-${suffix}`
+      }
+      const org = await this.prisma.organization.create({
+        data: {
+          name: baseName.slice(0, 120),
+          slug,
+          members: { create: { userId: user.id, role: "OWNER" } },
+          billing: { create: { plan: "free", seats: 10, usageLimit: 1000 } },
+        },
+      })
+      organizationId = org.id
+    } else {
+      const first = await this.prisma.organizationMember.findFirst({
+        where: { userId: user.id },
+        orderBy: { createdAt: "asc" },
+      })
+      organizationId = first?.organizationId ?? null
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        organizationId,
+        userId: user.id,
+        action: "auth.basacore_login",
+        entityType: "user",
+        entityId: user.id,
+        metadata: { created, tenantSlug: tenantSlug ?? null },
+      },
+    })
+    return { user, organizationId, created }
+  }
+
+  async basacoreExchange(dto: BasacoreExchangeDto, meta?: TokenMeta) {
+    const issuer = this.config.get<string>("BASACORE_ISSUER", "").replace(/\/+$/, "")
+    const internalIssuer = (
+      this.config.get<string>("BASACORE_INTERNAL_ISSUER", "") || issuer
+    ).replace(/\/+$/, "")
+    const clientId = this.config.get<string>("BASACORE_CLIENT_ID", "")
+    const clientSecret = this.config.get<string>("BASACORE_CLIENT_SECRET", "")
+    const expectedRedirect =
+      this.config.get<string>("BASACORE_REDIRECT_URI", "") ||
+      `${this.config.get<string>("WEB_ORIGIN", "http://localhost:3000").replace(/\/+$/, "")}/auth/basacore/callback`
+    if (!issuer || !clientId || !clientSecret) {
+      throw new ServiceUnavailableException("Basacore sign-in is not configured")
+    }
+    if (dto.redirectUri !== expectedRedirect) {
+      throw new BadRequestException("Basacore redirect_uri does not match the configured callback")
+    }
+
+    const form = new URLSearchParams({
+      grant_type: "authorization_code",
+      code: dto.code,
+      redirect_uri: dto.redirectUri,
+      code_verifier: dto.codeVerifier,
+    })
+    const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64")
+    let tokenRes: Response
+    try {
+      tokenRes = await fetch(`${internalIssuer}/v1/oauth/token`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          authorization: `Basic ${basic}`,
+        },
+        body: form,
+        signal: AbortSignal.timeout(8000),
+      })
+    } catch {
+      throw new ServiceUnavailableException("Basacore token endpoint is unreachable")
+    }
+    if (!tokenRes.ok) {
+      throw new UnauthorizedException("Basacore rejected the authorization code")
+    }
+    const tokens = (await tokenRes.json().catch(() => ({}))) as { id_token?: string }
+    if (!tokens.id_token) throw new UnauthorizedException("Basacore did not return an ID token")
+
+    const payload = await this.verifyBasacoreIdToken(
+      tokens.id_token,
+      issuer,
+      internalIssuer,
+      clientId,
+      dto.nonce
+    )
+    const { user, organizationId, created } = await this.provisionBasacoreUser(payload)
+    const issued = await this.issueTokens(user, meta)
+    this.logger.log(`Basacore login ok for ${user.email}${created ? " (new user)" : ""}`)
+    return {
+      user: this.sanitize(user),
+      ...stripJti(issued),
+      organizationId,
+    }
   }
 
   /**

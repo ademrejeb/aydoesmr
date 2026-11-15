@@ -24,6 +24,7 @@ interface AuthContextValue {
   currentOrg: Organization | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithTokens: (auth: { user: AuthUser; accessToken: string }) => Promise<void>
   register: (email: string, password: string, fullName?: string, locale?: string, inviteToken?: string) => Promise<void>
   logout: () => void
   setOrganization: (org: Organization) => void
@@ -122,6 +123,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applyAuth, refreshOrganizations]
   )
 
+  const loginWithTokens = useCallback(
+    async (auth: { user: AuthUser; accessToken: string }) => {
+      applyAuth(auth)
+      await refreshOrganizations(auth.accessToken)
+    },
+    [applyAuth, refreshOrganizations]
+  )
+
   const register = useCallback(
     async (email: string, password: string, fullName?: string, locale?: string, inviteToken?: string) => {
       const auth = await api.register({ email, password, fullName, locale, inviteToken })
@@ -157,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentOrg,
       loading,
       login,
+      loginWithTokens,
       register,
       logout,
       setOrganization,
@@ -169,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentOrg,
       loading,
       login,
+      loginWithTokens,
       register,
       logout,
       setOrganization,

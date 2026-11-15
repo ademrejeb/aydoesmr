@@ -13,10 +13,12 @@ import {
   LogIn,
   Mail,
   ScanSearch,
+  ShieldCheck,
   UserPlus,
   Users,
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { basacoreEnabled, startBasacoreLogin } from "@/lib/basacore"
 import { useI18n, LOCALES, LOCALE_LABELS } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -231,6 +233,30 @@ export default function LoginPage() {
         <main className="flex flex-1 items-center justify-center px-4 py-10 sm:px-8">
           <div className="w-full max-w-md">
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
+              {basacoreEnabled && mode === "login" ? (
+                <div className="mb-5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    className="w-full"
+                    onClick={() =>
+                      void startBasacoreLogin().catch((e) =>
+                        setError(e instanceof Error ? e.message : t.auth.err_generic)
+                      )
+                    }
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    {t.auth.basacore_login}
+                  </Button>
+                  <div className="mt-4 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <span className="h-px flex-1 bg-border" />
+                    {locale === "ar" ? "أو بالبريد" : locale === "fr" ? "ou par e-mail" : "or by email"}
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1" role="tablist" aria-label={t.auth.subtitle}>
                 {(["login", "register"] as const).map((m) => (
                   <button

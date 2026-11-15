@@ -13,8 +13,20 @@ export class EncryptionService {
   constructor() {
     const configured = process.env.AI_ENCRYPTION_KEY ?? ""
     const hex = configured.replace(/\s+/g, "")
+    const allZero = /^0{64}$/.test(hex)
+    if (process.env.NODE_ENV === "production" && (allZero || !/^[0-9a-fA-F]{64}$/.test(hex))) {
+      throw new Error(
+        "AI_ENCRYPTION_KEY must be a unique 64-character hex key in production. " +
+          "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+      )
+    }
     if (/^[0-9a-fA-F]{64}$/.test(hex)) {
       this.key = Buffer.from(hex, "hex")
+      if (allZero) {
+        this.logger.warn(
+          "AI_ENCRYPTION_KEY is the public all-zero development key. Set a unique key before production."
+        )
+      }
     } else {
       this.key = createHash("sha256").update("techverse-ai-dev-fallback-key").digest()
       this.logger.warn(

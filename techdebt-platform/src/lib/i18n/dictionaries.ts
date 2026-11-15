@@ -215,6 +215,7 @@ export interface Dictionary {
     err_required: string
     err_invalid: string
     err_generic: string
+    basacore_login: string
   }
   platform: {
     overview: string
@@ -225,6 +226,7 @@ export interface Dictionary {
     dev: string
     dev_rules: string
     issues: string
+    agent_factory: string
     notifications: string
     no_notifications: string
     admin: string
@@ -1598,6 +1600,7 @@ export const dictionaries: Record<Locale, Dictionary> = {
       err_required: "يرجى ملء جميع الحقول",
       err_invalid: "بيانات غير صحيحة",
       err_generic: "تعذر الاتصال بالخادم",
+      basacore_login: "المتابعة عبر Basacore",
     },
     platform: {
       overview: "نظرة عامة",
@@ -1608,6 +1611,7 @@ export const dictionaries: Record<Locale, Dictionary> = {
       dev: "تحليل الكود",
       dev_rules: "قواعد التحليل",
       issues: "المشاكل",
+      agent_factory: "وكلاء الذكاء",
       notifications: "الإشعارات",
       no_notifications: "لا توجد إشعارات",
       admin: "الإدارة",
@@ -2904,6 +2908,7 @@ export const dictionaries: Record<Locale, Dictionary> = {
       err_required: "Please fill in all fields",
       err_invalid: "Invalid credentials",
       err_generic: "Could not reach the server",
+      basacore_login: "Continue with Basacore",
     },
     platform: {
       overview: "Overview",
@@ -2914,6 +2919,7 @@ export const dictionaries: Record<Locale, Dictionary> = {
       dev: "Code Analysis",
       dev_rules: "Analysis Rules",
       issues: "Issues",
+      agent_factory: "AI Agents",
       notifications: "Notifications",
       no_notifications: "No notifications",
 admin: "Administration",
@@ -4210,6 +4216,7 @@ admin: "Administration",
       err_required: "Veuillez remplir tous les champs",
       err_invalid: "Identifiants invalides",
       err_generic: "Impossible de joindre le serveur",
+      basacore_login: "Continuer avec Basacore",
     },
     platform: {
       overview: "Aperçu",
@@ -4220,6 +4227,7 @@ admin: "Administration",
       dev: "Analyse de Code",
       dev_rules: "Règles d'Analyse",
       issues: "Problèmes",
+      agent_factory: "Agents IA",
       notifications: "Notifications",
       no_notifications: "Aucune notification",
 admin: "Administration",

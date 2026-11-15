@@ -16,6 +16,7 @@ import { GitModule } from "./modules/git/git.module"
 import { PipelinesModule } from "./modules/pipelines/pipelines.module"
 import { AiModule } from "./modules/ai/ai.module"
 import { AiActionsModule } from "./modules/ai-actions/ai-actions.module"
+import { AgentFactoryModule } from "./modules/agent-factory/agent-factory.module"
 import { PlannerModule } from "./modules/planner/planner.module"
 import { NotificationsModule } from "./modules/notifications/notifications.module"
 import { ConversationsModule } from "./modules/conversations/conversations.module"
@@ -52,6 +53,7 @@ import { StorageModule } from "./storage/storage.module"
     PipelinesModule,
     AiModule,
     AiActionsModule,
+    AgentFactoryModule,
     PlannerModule,
     NotificationsModule,
     ConversationsModule,

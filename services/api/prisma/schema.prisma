@@ -113,6 +113,8 @@ model User {
   pipelineRuns       PipelineRun[]        @relation("PipelineRunCreator")
   aiProviders        AiProvider[]         @relation("AiProviderCreator")
   aiActionRuns       AiActionRun[]        @relation("AiActionRunCreator")
+  agentConnections   AgentConnection[]    @relation("AgentConnectionCreator")
+  agentRuns          AgentRun[]           @relation("AgentRunCreator")
   timesheetEntries   TimesheetEntry[]
   leaveBalances      LeaveBalance[]
   leaveRequests      LeaveRequest[]
@@ -194,6 +196,8 @@ model Organization {
   pipelineRuns     PipelineRun[]
   aiProviders      AiProvider[]
   aiActionRuns     AiActionRun[]
+  agentConnections AgentConnection[]
+  agentRuns        AgentRun[]
   sprintPlans      SprintPlan[]
   timesheetEntries TimesheetEntry[]
   leaveTypes       LeaveType[]
@@ -879,6 +883,51 @@ model AiProvider {
 
   @@index([organizationId])
   @@index([organizationId, name])
+}
+
+model AgentConnection {
+  id              String    @id @default(uuid())
+  organizationId  String
+  name            String
+  baseUrl         String
+  agentId         String
+  apiKeyEncrypted String? // AES-256-GCM ciphertext (iv.tag.cipher base64)
+  apiKeyHint      String? // last 4 chars of the key, for display
+  status          String    @default("active") // active | disabled
+  lastTestAt      DateTime?
+  lastTestStatus  String? // ok | fail
+  lastTestError   String?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AgentConnectionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  runs         AgentRun[]
+
+  @@index([organizationId])
+  @@index([organizationId, name])
+}
+
+model AgentRun {
+  id             String    @id @default(uuid())
+  organizationId String
+  connectionId   String
+  status         String    @default("completed") // completed | failed
+  input          Json
+  output         Json?
+  error          String?
+  durationMs     Int?
+  providerRunId  String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection   AgentConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  createdBy    User?           @relation("AgentRunCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([connectionId, createdAt])
 }
 
 model AiActionRun {

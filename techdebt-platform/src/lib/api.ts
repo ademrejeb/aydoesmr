@@ -733,6 +733,49 @@ export interface AiChatResult {
   requestedAt: string
 }
 
+export interface AgentConnection {
+  id: string
+  organizationId: string
+  name: string
+  baseUrl: string
+  agentId: string
+  apiKeyHint: string | null
+  status: "active" | "disabled"
+  lastTestAt: string | null
+  lastTestStatus: "ok" | "fail" | null
+  lastTestError: string | null
+  createdById: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentRun {
+  id: string
+  organizationId: string
+  connectionId: string
+  status: "completed" | "failed"
+  input: Record<string, unknown>
+  output: Record<string, unknown> | null
+  error: string | null
+  durationMs: number | null
+  providerRunId: string | null
+  createdById: string | null
+  createdAt: string
+  connection?: { id: string; name: string } | null
+}
+
+export interface AgentConnectionTest {
+  ok: boolean
+  error?: string
+  durationMs?: number
+  agent?: {
+    id: string
+    name: string
+    lifecycleStatus: string
+    deployment: Record<string, unknown>
+  }
+}
+
 export interface GatewayStatus {
   baseUrl: string
   healthy: boolean
@@ -1346,6 +1389,10 @@ export const api = {
     return request<AuthResponse>("/auth/login", { method: "POST", body: dto })
   },
 
+  basacoreExchange(dto: { code: string; codeVerifier: string; redirectUri: string; nonce?: string }) {
+    return request<AuthResponse>("/auth/basacore/exchange", { method: "POST", body: dto })
+  },
+
   /** Rotates the httpOnly refresh cookie; no body needed. */
   refresh() {
     return request<AuthResponse>("/auth/refresh", { method: "POST" })
@@ -1780,6 +1827,69 @@ export const api = {
       if (!res.ok) throw new ApiError(res.status ?? 500, res.message ?? "Import failed")
       return JSON.parse(res.text) as TimesheetImportResult
     })
+  },
+
+  listAgentConnections(token: string, orgId: string) {
+    return request<AgentConnection[]>(`/organizations/${orgId}/agent-factory/connections`, {
+      token,
+      orgId,
+    })
+  },
+
+  createAgentConnection(
+    dto: { name: string; baseUrl: string; agentId: string; apiKey?: string },
+    token: string,
+    orgId: string
+  ) {
+    return request<AgentConnection>(`/organizations/${orgId}/agent-factory/connections`, {
+      method: "POST",
+      body: dto,
+      token,
+      orgId,
+    })
+  },
+
+  updateAgentConnection(
+    connectionId: string,
+    dto: { name?: string; baseUrl?: string; agentId?: string; apiKey?: string; status?: string },
+    token: string,
+    orgId: string
+  ) {
+    return request<AgentConnection>(
+      `/organizations/${orgId}/agent-factory/connections/${connectionId}`,
+      { method: "PATCH", body: dto, token, orgId }
+    )
+  },
+
+  deleteAgentConnection(connectionId: string, token: string, orgId: string) {
+    return request<{ ok: boolean }>(
+      `/organizations/${orgId}/agent-factory/connections/${connectionId}`,
+      { method: "DELETE", token, orgId }
+    )
+  },
+
+  testAgentConnection(connectionId: string, token: string, orgId: string) {
+    return request<AgentConnectionTest>(
+      `/organizations/${orgId}/agent-factory/connections/${connectionId}/test`,
+      { method: "POST", body: {}, token, orgId }
+    )
+  },
+
+  runAgent(
+    connectionId: string,
+    input: Record<string, unknown>,
+    token: string,
+    orgId: string
+  ) {
+    return request<AgentRun>(
+      `/organizations/${orgId}/agent-factory/connections/${connectionId}/run`,
+      { method: "POST", body: { input }, token, orgId }
+    )
+  },
+
+  listAgentRuns(token: string, orgId: string, connectionId?: string) {
+    const q = connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : ""
+    return request<AgentRun[]>(`/organizations/${orgId}/agent-factory/runs${q}`, { token, orgId })
   },
 
   assistantQuery(token: string, orgId: string, question: string): Promise<AssistantQueryResult> {

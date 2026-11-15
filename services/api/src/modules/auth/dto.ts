@@ -40,3 +40,20 @@ export class RefreshDto {
   @IsString()
   refreshToken?: string
 }
+export class BasacoreExchangeDto {
+  @IsString()
+  @IsNotEmpty()
+  code!: string
+
+  @IsString()
+  @IsNotEmpty()
+  codeVerifier!: string
+
+  @IsString()
+  @IsNotEmpty()
+  redirectUri!: string
+
+  @IsOptional()
+  @IsString()
+  nonce?: string
+}

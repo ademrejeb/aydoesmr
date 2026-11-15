@@ -145,6 +145,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: "pipelines", cap: "pipeline_run" },
       { key: "servers", cap: "view" },
       { key: "ai", cap: "ai_use" },
+      { key: "agent_factory", cap: "ai_use" },
     ],
   },
   {

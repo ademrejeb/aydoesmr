@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post, Req, Res } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
 import type { Request, Response } from "express"
 import { AuthService, TokenMeta, parseTtlMs } from "./auth.service"
-import { RegisterDto, LoginDto, RefreshDto } from "./dto"
+import { BasacoreExchangeDto, RegisterDto, LoginDto, RefreshDto } from "./dto"
 import { Public } from "../../common/decorators/roles.decorator"
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import type { AuthUser } from "../../common/interfaces/authenticated-request.interface"
@@ -70,6 +70,19 @@ export class AuthController {
    * Rotating refresh. Reads the httpOnly cookie (browsers) or the body
    * (non-browser clients), always rotates the token and re-sets the cookie.
    */
+  @Public()
+  @Post("basacore/exchange")
+  async basacoreExchange(
+    @Body() dto: BasacoreExchangeDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const result = await this.auth.basacoreExchange(dto, tokenMeta(req))
+    this.setRefreshCookie(res, result.refreshToken)
+    const { refreshToken: _refresh, ...body } = result
+    return body
+  }
+
   @Public()
   @Post("refresh")
   async refresh(@Body() dto: RefreshDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
