@@ -97,7 +97,8 @@ services:
       CORS_ORIGIN: http://localhost:3000
       PORT: "3001"
       WS_URL: http://localhost:8092
-      AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      # Development-only default; set a unique key for any shared deployment.
+      AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:-9cab9e17ca5788d9e1ddc7623d2fd860c1d910e5dfa05b34ac454d0654dbf030}
       AGENT_FACTORY_ALLOW_PRIVATE: ${AGENT_FACTORY_ALLOW_PRIVATE:-false}
       BASACORE_ISSUER: ${BASACORE_ISSUER:-http://localhost:8000}
       BASACORE_INTERNAL_ISSUER: ${BASACORE_INTERNAL_ISSUER:-http://host.docker.internal:8000}
