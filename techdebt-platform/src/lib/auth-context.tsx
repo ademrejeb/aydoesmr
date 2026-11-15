@@ -12,8 +12,8 @@ import {
 import { useRouter } from "next/navigation"
 import { api, onSessionTokenChange, type AuthUser, type Organization } from "@/lib/api"
 
-const TOKEN_KEY = "techverse_token"
-/** Pre-cookie-session storage key; cleared on boot so old tabs cannot replay stale refresh tokens. */
+/** Legacy keys, cleared on boot. Auth now lives in memory + the httpOnly refresh cookie. */
+const LEGACY_TOKEN_KEY = "techverse_token"
 const LEGACY_REFRESH_KEY = "techverse_refresh"
 const ORG_KEY = "techverse_org"
 
@@ -41,19 +41,14 @@ function safeGet(key: string): string | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [token, setToken] = useState<string | null>(() => safeGet(TOKEN_KEY))
+  const [token, setToken] = useState<string | null>(null)
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const persist = (t: string) => {
-    window.localStorage.setItem(TOKEN_KEY, t)
-  }
-
   const applyAuth = useCallback((auth: { user: AuthUser; accessToken: string }) => {
     setUser(auth.user)
     setToken(auth.accessToken)
-    persist(auth.accessToken)
   }, [])
 
   // api.ts rotates the refresh cookie and retries on 401; keep our copy of the
@@ -61,7 +56,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     onSessionTokenChange((t) => {
       setToken(t)
-      persist(t)
     })
     return () => onSessionTokenChange(null)
   }, [])
@@ -79,18 +73,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const bootstrap = useCallback(async () => {
+    // Purge tokens written by older builds; the access token is memory-only now.
+    window.localStorage.removeItem(LEGACY_TOKEN_KEY)
     window.localStorage.removeItem(LEGACY_REFRESH_KEY)
 
-    let tok = safeGet(TOKEN_KEY)
-    if (!tok) {
-      // The httpOnly cookie may still hold a live session (e.g. cleared storage).
-      try {
-        const auth = await api.refresh()
-        applyAuth(auth)
-        tok = auth.accessToken
-      } catch {
-        /* no cookie session */
-      }
+    let tok: string | null = null
+    try {
+      // The httpOnly refresh cookie is the durable session.
+      const auth = await api.refresh()
+      applyAuth(auth)
+      tok = auth.accessToken
+    } catch {
+      /* no cookie session */
     }
     if (!tok) {
       setLoading(false)
@@ -101,7 +95,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me)
       await refreshOrganizations(tok)
     } catch {
-      window.localStorage.removeItem(TOKEN_KEY)
       setUser(null)
       setToken(null)
       setOrganizations([])
@@ -144,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     // Best-effort server-side revocation of the refresh session + cookie clear.
     api.logout().catch(() => {})
-    window.localStorage.removeItem(TOKEN_KEY)
+    window.localStorage.removeItem(LEGACY_TOKEN_KEY)
     window.localStorage.removeItem(LEGACY_REFRESH_KEY)
     window.localStorage.removeItem(ORG_KEY)
     setUser(null)
