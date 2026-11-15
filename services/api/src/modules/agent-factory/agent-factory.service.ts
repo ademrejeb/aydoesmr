@@ -6,6 +6,7 @@ import * as net from "node:net"
 import { PrismaService } from "../../prisma/prisma.service"
 import { EncryptionService } from "../ai/encryption.service"
 import { CreateAgentConnectionDto, RunAgentDto, UpdateAgentConnectionDto } from "./dto"
+import { isPrivateAddress, requestJson, type JsonResponse } from "./egress"
 
 type ConnectionRow = {
   id: string
@@ -26,43 +27,6 @@ type ConnectionRow = {
 
 const MAX_INPUT_BYTES = 128 * 1024
 
-function isPrivateAddress(address: string): boolean {
-  if (net.isIPv4(address)) {
-    const [a, b] = address.split(".").map(Number)
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127)
-    )
-  }
-  if (net.isIPv6(address)) {
-    const normalized = address.toLowerCase()
-    // DNS commonly returns IPv4-mapped IPv6 addresses for dual-stack hosts.
-    // Treat the embedded IPv4 address with the same rules instead of letting
-    // ::ffff:127.0.0.1 (and friends) through.
-    const mapped = normalized.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/)
-    if (mapped) return isPrivateAddress(mapped[1])
-    const mappedHex = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
-    if (mappedHex) {
-      const high = Number.parseInt(mappedHex[1], 16)
-      const low = Number.parseInt(mappedHex[2], 16)
-      return isPrivateAddress(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`)
-    }
-    return (
-      normalized === "::1" ||
-      normalized === "::" ||
-      normalized.startsWith("fc") ||
-      normalized.startsWith("fd") ||
-      normalized.startsWith("fe80")
-    )
-  }
-  return true
-}
-
 @Injectable()
 export class AgentFactoryService {
   private readonly logger = new Logger(AgentFactoryService.name)
@@ -78,6 +42,13 @@ export class AgentFactoryService {
     return rest
   }
 
+  private allowPrivate(): boolean {
+    return (
+      this.config.get<string>("AGENT_FACTORY_ALLOW_PRIVATE") === "true" ||
+      this.config.get<string>("NODE_ENV") !== "production"
+    )
+  }
+
   private async assertBaseUrl(raw: string): Promise<string> {
     let url: URL
     try {
@@ -91,10 +62,7 @@ export class AgentFactoryService {
     if (url.username || url.password) {
       throw new BadRequestException("Agent base URL must not contain userinfo")
     }
-    const allowPrivate =
-      this.config.get<string>("AGENT_FACTORY_ALLOW_PRIVATE") === "true" ||
-      this.config.get<string>("NODE_ENV") !== "production"
-    if (!allowPrivate) {
+    if (!this.allowPrivate()) {
       // WHATWG URL keeps literal IPv6 hostnames in brackets; strip them so
       // net.isIP/dns.lookup see the address itself and public IPv6 works.
       const host = url.hostname.replace(/^\[|\]$/g, "")
@@ -218,18 +186,17 @@ export class AgentFactoryService {
     const conn = await this.find(organizationId, connectionId)
     const started = Date.now()
     try {
-      // Re-check at request time: a stored hostname can be re-pointed after
-      // the connection was created. This does not fully close DNS rebinding,
-      // but it rejects a host that already resolves to a private address.
       await this.assertBaseUrl(conn.baseUrl)
-      const res = await fetch(
+      const res = await requestJson(
         `${conn.baseUrl}/api/v1/gateway/agents/${encodeURIComponent(conn.agentId)}`,
         {
+          method: "GET",
           headers: { authorization: `Bearer ${this.apiKey(conn)}` },
-          signal: AbortSignal.timeout(8000),
+          timeoutMs: 8000,
+          allowPrivate: this.allowPrivate(),
         }
       )
-      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
+      const body = (res.body ?? {}) as Record<string, unknown>
       if (!res.ok) {
         throw new Error(
           typeof body?.error === "object" && body.error && "message" in body.error
@@ -287,9 +254,9 @@ export class AgentFactoryService {
     }
     const started = Date.now()
     const idempotencyKey = `techverse-${randomUUID()}`
-    let response: Response
+    let response: JsonResponse
     try {
-      response = await fetch(
+      response = await requestJson(
         `${conn.baseUrl}/api/v1/agents/${encodeURIComponent(conn.agentId)}/runs`,
         {
           method: "POST",
@@ -299,7 +266,8 @@ export class AgentFactoryService {
             "idempotency-key": idempotencyKey,
           },
           body: JSON.stringify({ input: dto.input ?? {} }),
-          signal: AbortSignal.timeout(75_000),
+          timeoutMs: 75_000,
+          allowPrivate: this.allowPrivate(),
         }
       )
     } catch {
@@ -317,7 +285,7 @@ export class AgentFactoryService {
       await this.audit(organizationId, userId, "agent.run", { ok: false, runId: run.id })
       return run
     }
-    const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
+    const payload = (response.body ?? {}) as Record<string, unknown>
     const ok = response.ok
     const run = await this.prisma.agentRun.create({
       data: {
