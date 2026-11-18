@@ -58,6 +58,25 @@ export class GitController {
     return this.git.commitsAt(orgId, repositoryId, ref, limit)
   }
 
+  @Get("repositories/:repositoryId/pulls/:pullId/diff")
+  pullDiff(
+    @Param("id") orgId: string,
+    @Param("repositoryId") repositoryId: string,
+    @Param("pullId") pullId: string
+  ) {
+    return this.git.pullDiff(orgId, repositoryId, pullId)
+  }
+
+  @Get("repositories/:repositoryId/diff")
+  diff(
+    @Param("id") orgId: string,
+    @Param("repositoryId") repositoryId: string,
+    @Query("base") base?: string,
+    @Query("head") head?: string
+  ) {
+    return this.git.diffAt(orgId, repositoryId, base, head)
+  }
+
   @Get("repositories/:repositoryId/commits/:sha")
   commit(
     @Param("id") orgId: string,

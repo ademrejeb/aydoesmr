@@ -12,6 +12,8 @@ import {
   catBlobSize,
   cleanRepoName,
   commitFileInBare,
+  diffCommitRange,
+  diffDetailBetween,
   getCommitDetail,
   hashToken,
   headSha,
@@ -307,6 +309,35 @@ export class GitService {
       ref: branch,
       commits: await listCommitsAt(repo.storagePath, branch, Number.isFinite(count) ? count : 40).catch(() => []),
     }
+  }
+
+  async diffAt(organizationId: string, repositoryId: string, base?: string, head?: string) {
+    const repo = await this.browserRepo(organizationId, repositoryId)
+    const baseRef = this.browserRef(base, repo.defaultBranch)
+    const headRef = this.browserRef(head, repo.defaultBranch)
+    try {
+      return await diffDetailBetween(repo.storagePath, baseRef, headRef)
+    } catch (error) {
+      throw new BadRequestException(`Could not diff ${baseRef}..${headRef}: ${(error as Error).message}`)
+    }
+  }
+
+  async pullDiff(organizationId: string, repositoryId: string, pullId: string) {
+    const repo = await this.browserRepo(organizationId, repositoryId)
+    const pull = await this.prisma.factoryPullRequest.findFirst({
+      where: { id: pullId, repositoryId, organizationId },
+      select: { commitShas: true, sourceBranch: true, targetBranch: true },
+    })
+    if (!pull) throw new NotFoundException("Pull request not found")
+    const shas = Array.isArray(pull.commitShas) ? pull.commitShas.filter((sha): sha is string => typeof sha === "string") : []
+    if (shas.length > 0) {
+      try {
+        return await diffCommitRange(repo.storagePath, shas)
+      } catch {
+        // Fall through to the branch comparison for unusual histories.
+      }
+    }
+    return this.diffAt(organizationId, repositoryId, pull.targetBranch, pull.sourceBranch)
   }
 
   async commitAt(organizationId: string, repositoryId: string, sha: string) {

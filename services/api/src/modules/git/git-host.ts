@@ -429,3 +429,79 @@ export async function getCommitDetail(bareDir: string, sha: string): Promise<Com
     patch,
   }
 }
+
+export interface DiffDetail {
+  base: string
+  head: string
+  entries: { path: string; status: string; additions: number; deletions: number }[]
+  additions: number
+  deletions: number
+  patch: string
+}
+
+/** Unified diff between two refs with a size-capped patch and numstat. */
+export async function diffDetailBetween(bareDir: string, base: string, head: string): Promise<DiffDetail> {
+  if (!isSafeGitRef(base) || !isSafeGitRef(head)) throw new Error("Invalid git ref")
+  const range = `${base}..${head}`
+  const numstat = (await runGitGet(["-C", bareDir, "diff", "--numstat", range])).toString("utf8")
+  const names = (await runGitGet(["-C", bareDir, "diff", "--name-status", range])).toString("utf8")
+  const statusByPath = new Map<string, string>()
+  for (const line of names.split("\n")) {
+    const [status, ...rest] = line.split("\t")
+    const path = rest.join("\t").trim()
+    if (path && status) statusByPath.set(path, status.slice(0, 1))
+  }
+  const entries: DiffDetail["entries"] = []
+  let additions = 0
+  let deletions = 0
+  for (const line of numstat.split("\n")) {
+    const [add, del, path] = line.split("\t")
+    if (!path) continue
+    const a = Number(add)
+    const d = Number(del)
+    const safeAdd = Number.isFinite(a) ? a : 0
+    const safeDel = Number.isFinite(d) ? d : 0
+    additions += safeAdd
+    deletions += safeDel
+    entries.push({ path: path.trim(), status: statusByPath.get(path.trim()) ?? "M", additions: safeAdd, deletions: safeDel })
+  }
+  const patch = (await runGitGet(["-C", bareDir, "diff", "--no-color", "--unified=3", range], 60_000))
+    .toString("utf8")
+    .slice(0, 300_000)
+  return { base, head, entries, additions, deletions, patch }
+}
+
+/** Diff the commits that make up a pull request, independent of whether it was merged. */
+export async function diffCommitRange(bareDir: string, shas: string[]): Promise<DiffDetail> {
+  const valid = shas.filter((sha) => /^[0-9a-f]{7,40}$/i.test(sha))
+  if (valid.length === 0) throw new Error("No commit SHAs")
+  const base = `${valid[0]}^`
+  const head = valid[valid.length - 1]
+  const range = `${base}..${head}`
+  const numstat = (await runGitGet(["-C", bareDir, "diff", "--numstat", range])).toString("utf8")
+  const names = (await runGitGet(["-C", bareDir, "diff", "--name-status", range])).toString("utf8")
+  const statusByPath = new Map<string, string>()
+  for (const line of names.split("\n")) {
+    const [status, ...rest] = line.split("\t")
+    const path = rest.join("\t").trim()
+    if (path && status) statusByPath.set(path, status.slice(0, 1))
+  }
+  const entries: DiffDetail["entries"] = []
+  let additions = 0
+  let deletions = 0
+  for (const line of numstat.split("\n")) {
+    const [add, del, path] = line.split("\t")
+    if (!path) continue
+    const a = Number(add)
+    const d = Number(del)
+    const safeAdd = Number.isFinite(a) ? a : 0
+    const safeDel = Number.isFinite(d) ? d : 0
+    additions += safeAdd
+    deletions += safeDel
+    entries.push({ path: path.trim(), status: statusByPath.get(path.trim()) ?? "M", additions: safeAdd, deletions: safeDel })
+  }
+  const patch = (await runGitGet(["-C", bareDir, "diff", "--no-color", "--unified=3", range], 60_000))
+    .toString("utf8")
+    .slice(0, 300_000)
+  return { base, head, entries, additions, deletions, patch }
+}

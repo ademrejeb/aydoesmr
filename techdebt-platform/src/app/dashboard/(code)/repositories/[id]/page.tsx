@@ -30,6 +30,7 @@ import {
   Plus,
   ScanSearch,
   Search,
+  Sparkles,
   Terminal,
   Trash2,
   TriangleAlert,
@@ -43,6 +44,7 @@ import {
   type GitBlob,
   type GitCommit,
   type GitCommitDetail,
+  type GitDiff,
   type GitRepository,
   type GitTreeEntry,
 } from "@/lib/api"
@@ -57,6 +59,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip } from "@/components/ui/tooltip"
 import { MarkdownView } from "@/components/repositories/markdown-view"
+import { DiffView } from "@/components/repositories/diff-view"
 
 function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message
@@ -257,6 +260,10 @@ export default function RepositoryDetailPage() {
   const [commitLoading, setCommitLoading] = useState(false)
   const [pulls, setPulls] = useState<FactoryPullRequest[]>([])
   const [pullsLoading, setPullsLoading] = useState(false)
+  const [pullDetail, setPullDetail] = useState<FactoryPullRequest | null>(null)
+  const [pullDiff, setPullDiff] = useState<GitDiff | null>(null)
+  const [pullDiffLoading, setPullDiffLoading] = useState(false)
+  const [pullDiffError, setPullDiffError] = useState<string | null>(null)
 
   const role = currentOrg?.role ?? "VIEWER"
   const canWrite = role !== "VIEWER"
@@ -392,6 +399,21 @@ const load = useCallback(async () => {
       cancelled = true
     }
   }, [tab, repo?.id, token, currentOrg])
+
+  const openPull = async (pull: FactoryPullRequest) => {
+    if (!token || !currentOrg || !repo) return
+    setPullDetail(pull)
+    setPullDiff(null)
+    setPullDiffError(null)
+    setPullDiffLoading(true)
+    try {
+      setPullDiff(await api.gitPullRequestDiff(token, currentOrg.id, repo.id, pull.id))
+    } catch (e) {
+      setPullDiffError(errMsg(e))
+    } finally {
+      setPullDiffLoading(false)
+    }
+  }
 
   const openCommit = async (sha: string) => {
     if (!token || !currentOrg || !repo) return
@@ -630,6 +652,7 @@ const load = useCallback(async () => {
               onClick={() => {
                 setTab(key)
                 setCommitDetail(null)
+                setPullDetail(null)
               }}
               className={cn(
                 "inline-flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition-colors",
@@ -726,7 +749,21 @@ const load = useCallback(async () => {
       )}
 
       {tab === "pulls" && (
-        <PullRequestsBrowser pulls={pulls} loading={pullsLoading} t={t} locale={locale} />
+        <PullRequestsBrowser
+          pulls={pulls}
+          loading={pullsLoading}
+          t={t}
+          locale={locale}
+          detail={pullDetail}
+          diff={pullDiff}
+          diffLoading={pullDiffLoading}
+          diffError={pullDiffError}
+          onOpen={openPull}
+          onBack={() => {
+            setPullDetail(null)
+            setPullDiff(null)
+          }}
+        />
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -1316,11 +1353,7 @@ function CommitsBrowser({
                 </div>
               ))}
             </div>
-            {detail.patch ? (
-              <pre dir="ltr" className="max-h-[30rem] overflow-auto rounded-xl border border-border bg-muted/30 p-4 font-mono text-[11px] leading-5">
-                {detail.patch}
-              </pre>
-            ) : null}
+            <DiffView patch={detail.patch} emptyLabel={t.githost.no_diff} maxHeight="30rem" />
           </div>
         )}
       </SectionCard>
@@ -1446,12 +1479,105 @@ function PullRequestsBrowser({
   loading,
   t,
   locale,
+  detail,
+  diff,
+  diffLoading,
+  diffError,
+  onOpen,
+  onBack,
 }: {
   pulls: FactoryPullRequest[]
   loading: boolean
   t: ReturnType<typeof useI18n>["t"]
   locale: string
+  detail: FactoryPullRequest | null
+  diff: GitDiff | null
+  diffLoading: boolean
+  diffError: string | null
+  onOpen: (pull: FactoryPullRequest) => void
+  onBack: () => void
 }) {
+  if (detail) {
+    return (
+      <SectionCard
+        icon={GitPullRequest}
+        title={`#${detail.number} ${detail.title}`}
+        right={
+          <div className="flex items-center gap-2">
+            <Badge variant={detail.status === "MERGED" ? "success" : detail.status === "CLOSED" ? "danger" : "outline"}>
+              {detail.status}
+            </Badge>
+            <Link href={`/dashboard/factory?run=${detail.runId}`}>
+              <Button size="sm" variant="outline">
+                <Sparkles className="h-3.5 w-3.5" />
+                {t.githost.open_in_factory}
+              </Button>
+            </Link>
+            <Button size="sm" variant="ghost" onClick={onBack}>
+              <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" />
+              {t.githost.back_to_pull_requests}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-5 p-5">
+          <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <code className="rounded bg-secondary px-1.5 py-0.5 font-mono">{detail.sourceBranch}</code>
+            <span>→</span>
+            <code className="rounded bg-secondary px-1.5 py-0.5 font-mono">{detail.targetBranch}</code>
+            <span>·</span>
+            <span>{timeAgo(detail.createdAt, locale)}</span>
+            {detail.risk ? <Badge variant="secondary">{detail.risk}</Badge> : null}
+          </p>
+
+          {detail.checks.length > 0 ? (
+            <div>
+              <h4 className="mb-2 text-xs font-bold">{t.githost.checks}</h4>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {detail.checks.map((check) => (
+                  <div key={check.name} className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                    {check.status === "PASSED" ? (
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                    ) : check.status === "FAILED" ? (
+                      <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                    ) : (
+                      <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-[11px] font-semibold">{check.name}</p>
+                      <p className="truncate text-[10px] text-muted-foreground">{check.detail ?? check.status}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {diffLoading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t.platform.loading}
+            </div>
+          ) : diffError ? (
+            <div className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">{diffError}</div>
+          ) : diff ? (
+            <div>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <h4 className="text-xs font-bold">{t.githost.files_title}</h4>
+                <Badge variant="secondary">{diff.entries.length}</Badge>
+                <span className="text-[11px] font-bold text-success">+{diff.additions}</span>
+                <span className="text-[11px] font-bold text-danger">−{diff.deletions}</span>
+              </div>
+              <DiffView patch={diff.patch} emptyLabel={t.githost.no_diff} maxHeight="42rem" />
+            </div>
+          ) : (
+            <DiffView patch="" emptyLabel={t.githost.no_diff} />
+          )}
+        </div>
+      </SectionCard>
+    )
+  }
+
   return (
     <SectionCard icon={GitPullRequest} title={t.githost.pull_requests} count={String(pulls.length)}>
       {loading ? (
@@ -1466,10 +1592,11 @@ function PullRequestsBrowser({
           {pulls.map((pull) => {
             const failed = pull.checks.filter((check) => check.status === "FAILED").length
             return (
-              <Link
+              <button
                 key={pull.id}
-                href={`/dashboard/factory?run=${pull.runId}`}
-                className="flex flex-wrap items-start gap-3 px-5 py-4 transition-colors hover:bg-muted/40"
+                type="button"
+                onClick={() => onOpen(pull)}
+                className="flex w-full flex-wrap items-start gap-3 px-5 py-4 text-start transition-colors hover:bg-muted/40"
               >
                 <span className={cn(
                   "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
@@ -1477,16 +1604,16 @@ function PullRequestsBrowser({
                 )}>
                   <GitPullRequest className="h-4 w-4" />
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
                     <span className="font-bold">#{pull.number}</span>
                     <span className="truncate text-sm font-semibold">{pull.title}</span>
                     <Badge variant={pull.status === "MERGED" ? "success" : pull.status === "CLOSED" ? "danger" : "outline"}>
                       {pull.status}
                     </Badge>
                     {pull.risk ? <Badge variant="secondary">{pull.risk}</Badge> : null}
-                  </div>
-                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                  </span>
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                     <code className="rounded bg-secondary px-1.5 py-0.5 font-mono">{pull.sourceBranch}</code>
                     <span>→</span>
                     <code className="rounded bg-secondary px-1.5 py-0.5 font-mono">{pull.targetBranch}</code>
@@ -1495,10 +1622,10 @@ function PullRequestsBrowser({
                     <span>·</span>
                     <span>{timeAgo(pull.createdAt, locale)}</span>
                     {failed > 0 ? <span className="font-bold text-danger">· {failed} checks failed</span> : null}
-                  </p>
-                </div>
+                  </span>
+                </span>
                 <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground rtl:rotate-180" />
-              </Link>
+              </button>
             )
           })}
         </div>

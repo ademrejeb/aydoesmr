@@ -638,6 +638,15 @@ export interface GitCommitDetail extends GitCommit {
   patch: string
 }
 
+export interface GitDiff {
+  base: string
+  head: string
+  entries: { path: string; status: string; additions: number; deletions: number }[]
+  additions: number
+  deletions: number
+  patch: string
+}
+
 export interface GitToken {
   id: string
   name: string
@@ -2652,6 +2661,24 @@ export const api = {
       `/organizations/${orgId}/git/repositories/${repositoryId}/commits${suffix}`,
       { token, orgId }
     )
+  },
+
+  gitPullRequestDiff(token: string, orgId: string, repositoryId: string, pullId: string) {
+    return request<GitDiff>(`/organizations/${orgId}/git/repositories/${repositoryId}/pulls/${pullId}/diff`, {
+      token,
+      orgId,
+    })
+  },
+
+  gitRepositoryDiff(token: string, orgId: string, repositoryId: string, base?: string, head?: string) {
+    const q = new URLSearchParams()
+    if (base) q.set("base", base)
+    if (head) q.set("head", head)
+    const suffix = q.toString() ? `?${q.toString()}` : ""
+    return request<GitDiff>(`/organizations/${orgId}/git/repositories/${repositoryId}/diff${suffix}`, {
+      token,
+      orgId,
+    })
   },
 
   gitRepositoryCommit(token: string, orgId: string, repositoryId: string, sha: string) {

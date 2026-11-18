@@ -770,6 +770,10 @@ export interface Dictionary {
     truncated: string
     browse: string
     branch: string
+    no_diff: string
+    open_in_factory: string
+    checks: string
+    back_to_pull_requests: string
   }
   dev: {
     title: string
@@ -1947,6 +1951,10 @@ export const dictionaries: Record<Locale, Dictionary> = {
       truncated: "معاينة مقتطعة",
       browse: "استعراض",
       branch: "فرع",
+      no_diff: "لا توجد فروقات نصية",
+      open_in_factory: "فتح في المصنع",
+      checks: "الفحوصات",
+      back_to_pull_requests: "كل طلبات السحب",
     },
     dev: {
       title: "تحليل الكود",
@@ -3273,6 +3281,10 @@ admin: "Administration",
       truncated: "preview truncated",
       browse: "Browse",
       branch: "Branch",
+      no_diff: "No textual diff",
+      open_in_factory: "Open in Factory",
+      checks: "Checks",
+      back_to_pull_requests: "All pull requests",
     },
     dev: {
       title: "Code Analysis",
@@ -4599,6 +4611,10 @@ admin: "Administration",
       truncated: "aperçu tronqué",
       browse: "Parcourir",
       branch: "Branche",
+      no_diff: "Aucun diff textuel",
+      open_in_factory: "Ouvrir dans Factory",
+      checks: "Vérifications",
+      back_to_pull_requests: "Toutes les pull requests",
     },
     dev: {
       title: "Analyse de Code",
