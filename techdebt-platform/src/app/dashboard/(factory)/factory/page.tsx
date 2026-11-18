@@ -433,6 +433,14 @@ export default function FactoryPage() {
     }
   }
 
+  useEffect(() => {
+    const requestedRun = new URLSearchParams(window.location.search).get("run")
+    if (!requestedRun || detail?.id === requestedRun) return
+    void openRun(requestedRun)
+    // A repository PR deep-links here with ?run=<id>.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const act = async (runId: string, label: string, action: () => Promise<FactoryRun>) => {
     setBusy(label)
     try {

@@ -54,7 +54,7 @@ export class ProjectsService {
         dueDate: true,
         visibility: true,
         createdAt: true,
-        _count: { select: { tasks: true, workflows: true, repositories: true } },
+        _count: { select: { tasks: true, workflows: true, repositories: true, gitRepositories: true } },
       },
       orderBy: { createdAt: "desc" },
     })

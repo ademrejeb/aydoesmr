@@ -224,3 +224,15 @@ approves it.
 | Provider gateway nests review JSON under `message`/`output` strings | Parse nested object/JSON candidates before accepting a decision | Independent review returned `APPROVED` and moved the run to `READY_TO_MERGE` |
 
 Verification commit: `dffbd16 fix(factory): preserve commit SHA and reviewer payloads`.
+
+## Hosted repository browser (2026-11-18)
+
+| Capability | Evidence |
+|---|---|
+| Repository code browser | `GET /git/repositories/:id/tree`, `/blob`, `/commits`, `/commits/:sha`; file tree and line-numbered viewer verified in `/dashboard/repositories/:id` |
+| Pretty Markdown | `react-markdown` + `remark-gfm`; README headings, lists, tables and fenced code render as Markdown instead of raw text |
+| Branches tab | Branch selector changes the tree/history; branch cards expose copy and browse actions |
+| Commits tab | Branch-scoped history; clicking a commit shows SHA, author, changed files, additions/deletions and patch |
+| Pull requests tab | Repository-scoped Factory PRs with status, risk, source/target branch and checks; deep-links to `/dashboard/factory?run=<id>` |
+| Project linkage | Project Git tab now lists TechVerse-hosted repositories linked by `projectId`; project cards count hosted + external repositories |
+| Northwind onboarding | FieldOps, AI Agent Factory and Design System repos pushed into Northwind Sales, each with a merged Factory run and PR #1 |

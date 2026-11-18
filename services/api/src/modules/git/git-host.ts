@@ -336,3 +336,96 @@ export async function showBlob(bareDir: string, rev: string, treePath: string): 
     return null
   }
 }
+
+/** Branch names / SHAs accepted by the read-only browser endpoints. */
+export function isSafeGitRef(ref: string): boolean {
+  return /^[0-9A-Za-z._\/-]{1,200}$/.test(ref) && !ref.startsWith("-") && !ref.includes("..")
+}
+
+/** Recursive tree at a branch or commit. */
+export async function listTreeAt(bareDir: string, ref: string): Promise<{ type: string; path: string }[]> {
+  if (!isSafeGitRef(ref)) throw new Error("Invalid git ref")
+  const out = await runGitGet(["-C", bareDir, "ls-tree", "-r", ref])
+  return out
+    .toString("utf8")
+    .split("\n")
+    .map((line) => {
+      const [meta, path] = line.split("\t")
+      if (!path) return null
+      const type = meta?.split(" ")?.slice(1, 2)?.[0]
+      if (type !== "blob" && type !== "tree") return null
+      return { type, path }
+    })
+    .filter((entry): entry is { type: string; path: string } => entry !== null)
+}
+
+/** Commit history at a branch or commit. */
+export async function listCommitsAt(bareDir: string, ref: string, n = 40): Promise<CommitInfo[]> {
+  if (!isSafeGitRef(ref)) throw new Error("Invalid git ref")
+  const out = await runGitGet([
+    "-C", bareDir, "log", `-n ${Math.max(1, Math.min(200, n))}`,
+    "--pretty=format:%H%x1f%an%x1f%ae%x1f%aI%x1f%s", ref,
+  ])
+  return out
+    .toString("utf8")
+    .split("\n")
+    .filter((line) => line.includes("\u001f"))
+    .map((line) => {
+      const [sha, author, email, date, message] = line.split("\u001f")
+      return { sha, author, email, date, message }
+    })
+}
+
+export interface CommitDetail extends CommitInfo {
+  parents: string[]
+  entries: { path: string; status: string; additions: number; deletions: number }[]
+  additions: number
+  deletions: number
+  patch: string
+}
+
+/** One commit with its numstat summary and a size-capped patch. */
+export async function getCommitDetail(bareDir: string, sha: string): Promise<CommitDetail> {
+  if (!/^[0-9a-f]{7,40}$/i.test(sha)) throw new Error("Invalid commit SHA")
+  const metaRaw = (await runGitGet([
+    "-C", bareDir, "show", "-s", "--pretty=format:%H%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%P", sha,
+  ])).toString("utf8")
+  const [fullSha, author, email, date, message, parentList] = metaRaw.split("\u001f")
+  const numstat = (await runGitGet(["-C", bareDir, "show", "--numstat", "--format=", sha])).toString("utf8")
+  const statusOut = (await runGitGet(["-C", bareDir, "show", "--name-status", "--format=", sha])).toString("utf8")
+  const statusByPath = new Map<string, string>()
+  for (const line of statusOut.split("\n")) {
+    const [status, ...rest] = line.split("\t")
+    const path = rest.join("\t").trim()
+    if (path && status) statusByPath.set(path, status.slice(0, 1))
+  }
+  const entries: CommitDetail["entries"] = []
+  let additions = 0
+  let deletions = 0
+  for (const line of numstat.split("\n")) {
+    const [add, del, path] = line.split("\t")
+    if (!path) continue
+    const a = Number(add)
+    const d = Number(del)
+    const safeAdd = Number.isFinite(a) ? a : 0
+    const safeDel = Number.isFinite(d) ? d : 0
+    additions += safeAdd
+    deletions += safeDel
+    entries.push({ path: path.trim(), status: statusByPath.get(path.trim()) ?? "M", additions: safeAdd, deletions: safeDel })
+  }
+  const patch = (await runGitGet(["-C", bareDir, "show", "--format=", "--no-color", sha], 60_000))
+    .toString("utf8")
+    .slice(0, 300_000)
+  return {
+    sha: fullSha || sha,
+    author: author ?? "",
+    email: email ?? "",
+    date: date ?? new Date().toISOString(),
+    message: message ?? "",
+    parents: (parentList ?? "").split(" ").filter(Boolean),
+    entries,
+    additions,
+    deletions,
+    patch,
+  }
+}

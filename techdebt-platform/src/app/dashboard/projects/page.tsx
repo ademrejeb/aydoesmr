@@ -83,7 +83,7 @@ function ProjectCard({ project, t, locale }: { project: Project; t: Dictionary; 
               <GitBranch className="h-3 w-3 shrink-0" />
               {t.platform.repositories}
             </span>
-            <span className="text-sm font-bold">{project._count.repositories}</span>
+            <span className="text-sm font-bold">{project._count.repositories + (project._count.gitRepositories ?? 0)}</span>
           </div>
           <div className="flex flex-col gap-1 rounded-lg bg-muted/60 px-2 py-1.5">
             <span className="flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">

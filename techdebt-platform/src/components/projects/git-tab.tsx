@@ -1,10 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { io } from "socket.io-client"
-import { ChevronDown, ChevronRight, GitBranch, GitFork, GitPullRequest, Loader2, Plus, RefreshCw } from "lucide-react"
+import { ChevronDown, ChevronRight, Clock, FileCode2, GitBranch, GitFork, GitPullRequest, HardDrive, Loader2, Plus, RefreshCw } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { api, type DevIssue, type DevRepository } from "@/lib/api"
+import { api, type DevIssue, type DevRepository, type GitRepository } from "@/lib/api"
 import { useI18n, type Dictionary } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -63,6 +64,7 @@ export function GitTab({
   const { token, currentOrg } = useAuth()
   const { t } = useI18n()
   const [repos, setRepos] = useState<DevRepository[]>([])
+  const [hosted, setHosted] = useState<GitRepository[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showLink, setShowLink] = useState(false)
@@ -73,8 +75,14 @@ export function GitTab({
 
   const load = useCallback(async () => {
     if (!token || !currentOrg) return
-    try { setRepos(await api.listRepositories(token, currentOrg.id, projectId)) }
-    catch (e) { setError(errMsg(e)) }
+    try {
+      const [linked, hostedRepos] = await Promise.all([
+        api.listRepositories(token, currentOrg.id, projectId),
+        api.gitListRepositories(token, currentOrg.id).catch(() => [] as GitRepository[]),
+      ])
+      setRepos(linked)
+      setHosted(hostedRepos.filter((repo) => repo.projectId === projectId))
+    } catch (e) { setError(errMsg(e)) }
     finally { setLoading(false) }
   }, [token, currentOrg, projectId])
 
@@ -157,7 +165,7 @@ export function GitTab({
           <Loader2 className="h-4 w-4 animate-spin" />
           {t.platform.loading}
         </div>
-      ) : repos.length === 0 ? (
+      ) : repos.length === 0 && hosted.length === 0 ? (
         <EmptyState
           icon={GitBranch}
           title={t.repo.empty}
@@ -171,6 +179,19 @@ export function GitTab({
           }
         />
       ) : (
+        <div className="space-y-5">
+          {hosted.length > 0 ? (
+            <section className="space-y-3" dir="ltr">
+              <div>
+                <h4 className="text-sm font-bold">{t.repo.hosted}</h4>
+                <p className="text-xs text-muted-foreground">{t.repo.hosted_hint}</p>
+              </div>
+              {hosted.map((repo) => (
+                <HostedRepoCard key={repo.id} repo={repo} t={t} />
+              ))}
+            </section>
+          ) : null}
+          {repos.length > 0 ? (
         <div dir="ltr" className="space-y-3">
           {repos.map((repo) => (
             <RepoCard
@@ -186,6 +207,8 @@ export function GitTab({
               t={t}
             />
           ))}
+        </div>
+          ) : null}
         </div>
       )}
 
@@ -218,6 +241,38 @@ export function GitTab({
         </Modal>
       )}
     </div>
+  )
+}
+
+function HostedRepoCard({ repo, t }: { repo: GitRepository; t: Dictionary }) {
+  return (
+    <Link
+      href={`/dashboard/repositories/${repo.id}`}
+      className="group flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/20"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-primary">
+        <GitBranch className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-sm font-bold">{repo.name}</p>
+          <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">TechVerse</span>
+          <span className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">
+            {repo.defaultBranch}
+          </span>
+        </div>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{repo.description ?? repo.project?.name ?? "—"}</p>
+      </div>
+      <span className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1"><FileCode2 className="h-3.5 w-3.5" />{repo.fileCount}</span>
+        <span className="flex items-center gap-1"><HardDrive className="h-3.5 w-3.5" />{sizeLabel(repo.sizeKb)}</span>
+        <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{timeLabel(repo.lastPushAt)}</span>
+      </span>
+      <span className="ms-auto inline-flex items-center gap-1 text-xs font-bold text-primary">
+        {t.repo.open}
+        <ChevronRight className="h-4 w-4 rtl:rotate-180" />
+      </span>
+    </Link>
   )
 }
 

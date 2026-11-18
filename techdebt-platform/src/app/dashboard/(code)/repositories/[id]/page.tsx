@@ -22,6 +22,7 @@ import {
   FolderOpen,
   GitBranch,
   GitCommitHorizontal,
+  GitPullRequest,
   Globe,
   HardDrive,
   Loader2,
@@ -35,7 +36,16 @@ import {
   Users,
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { api, wsOrigin, type GitRepository, type GitTreeEntry } from "@/lib/api"
+import {
+  api,
+  wsOrigin,
+  type FactoryPullRequest,
+  type GitBlob,
+  type GitCommit,
+  type GitCommitDetail,
+  type GitRepository,
+  type GitTreeEntry,
+} from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { useToast } from "@/lib/toast-context"
 import { cn, shortSha, timeAgo } from "@/lib/utils"
@@ -46,6 +56,7 @@ import { Modal } from "@/components/ui/modal"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip } from "@/components/ui/tooltip"
+import { MarkdownView } from "@/components/repositories/markdown-view"
 
 function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message
@@ -232,6 +243,20 @@ export default function RepositoryDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const [cloneTab, setCloneTab] = useState<"clone" | "push">("clone")
+  const [tab, setTab] = useState<"code" | "commits" | "branches" | "pulls">("code")
+  const [branch, setBranch] = useState("")
+  const [branchFiles, setBranchFiles] = useState<GitTreeEntry[] | null>(null)
+  const [treeLoading, setTreeLoading] = useState(false)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [blob, setBlob] = useState<GitBlob | null>(null)
+  const [blobLoading, setBlobLoading] = useState(false)
+  const [blobError, setBlobError] = useState<string | null>(null)
+  const [commits, setCommits] = useState<GitCommit[]>([])
+  const [commitsLoading, setCommitsLoading] = useState(false)
+  const [commitDetail, setCommitDetail] = useState<GitCommitDetail | null>(null)
+  const [commitLoading, setCommitLoading] = useState(false)
+  const [pulls, setPulls] = useState<FactoryPullRequest[]>([])
+  const [pullsLoading, setPullsLoading] = useState(false)
 
   const role = currentOrg?.role ?? "VIEWER"
   const canWrite = role !== "VIEWER"
@@ -270,6 +295,116 @@ const load = useCallback(async () => {
       socket.disconnect()
     }
   }, [token, currentOrg, id, load])
+
+  useEffect(() => {
+    if (!repo) return
+    if (!branch) setBranch(repo.defaultBranch)
+  }, [repo, branch])
+
+  useEffect(() => {
+    if (!repo || !token || !currentOrg || !branch) return
+    let cancelled = false
+    setTreeLoading(true)
+    api
+      .gitRepositoryTree(token, currentOrg.id, repo.id, branch)
+      .then((res) => {
+        if (cancelled) return
+        setBranchFiles(res.entries)
+        const readme = res.entries.find(
+          (entry) => entry.type === "blob" && /(^|\/)readme\.md$/i.test(entry.path)
+        )
+        setSelectedPath(readme?.path ?? null)
+      })
+      .catch((e) => {
+        if (!cancelled) setBlobError(errMsg(e))
+      })
+      .finally(() => {
+        if (!cancelled) setTreeLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [repo?.id, token, currentOrg, branch])
+
+  useEffect(() => {
+    if (!repo || !token || !currentOrg || !selectedPath || !branch) {
+      setBlob(null)
+      return
+    }
+    let cancelled = false
+    setBlobLoading(true)
+    setBlobError(null)
+    api
+      .gitRepositoryFile(token, currentOrg.id, repo.id, selectedPath, branch)
+      .then((res) => {
+        if (!cancelled) setBlob(res)
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setBlob(null)
+          setBlobError(errMsg(e))
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBlobLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [repo?.id, token, currentOrg, selectedPath, branch])
+
+  useEffect(() => {
+    if (tab !== "commits" || !repo || !token || !currentOrg || !branch) return
+    let cancelled = false
+    setCommitsLoading(true)
+    api
+      .gitRepositoryCommits(token, currentOrg.id, repo.id, branch, 80)
+      .then((res) => {
+        if (!cancelled) setCommits(res.commits)
+      })
+      .catch((e) => {
+        if (!cancelled) setBlobError(errMsg(e))
+      })
+      .finally(() => {
+        if (!cancelled) setCommitsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, repo?.id, token, currentOrg, branch])
+
+  useEffect(() => {
+    if (tab !== "pulls" || !repo || !token || !currentOrg) return
+    let cancelled = false
+    setPullsLoading(true)
+    api
+      .factoryPullRequests(token, currentOrg.id)
+      .then((rows) => {
+        if (!cancelled) setPulls(rows.filter((pull) => pull.repositoryId === repo.id))
+      })
+      .catch((e) => {
+        if (!cancelled) setBlobError(errMsg(e))
+      })
+      .finally(() => {
+        if (!cancelled) setPullsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, repo?.id, token, currentOrg])
+
+  const openCommit = async (sha: string) => {
+    if (!token || !currentOrg || !repo) return
+    setCommitLoading(true)
+    setCommitDetail(null)
+    try {
+      setCommitDetail(await api.gitRepositoryCommit(token, currentOrg.id, repo.id, sha))
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setCommitLoading(false)
+    }
+  }
 
   const runScan = async () => {
     if (!token || !currentOrg || !id) return
@@ -315,7 +450,7 @@ const load = useCallback(async () => {
   const cloneCmd = `git clone ${base}`
   const pushCmd = `git init\ngit add .\ngit commit -m "init"\ngit remote add origin ${base}\ngit push -u origin ${repo?.defaultBranch ?? "main"}`
 
-  const tree = useMemo(() => (repo ? buildTree(repo.files) : []), [repo])
+  const tree = useMemo(() => (repo ? buildTree(branchFiles ?? repo.files) : []), [repo, branchFiles])
   const languages = useMemo(() => {
     if (!repo) return [] as { label: string; color: string; count: number; pct: number }[]
     const counts = new Map<string, { label: string; color: string; count: number }>()
@@ -480,25 +615,124 @@ const load = useCallback(async () => {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="min-w-0 space-y-6 lg:col-span-2">
-          <FilesSection files={repo.files} tree={tree} t={t} />
-          {repo.readme ? (
-            <SectionCard icon={BookOpen} title={t.githost.readme} count={repo.readme.path}>
-              <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap p-5 font-mono text-xs leading-relaxed text-foreground">
-                {repo.readme.content}
-              </pre>
-            </SectionCard>
-          ) : null}
-          <CommitsSection commits={repo.commits} t={t} locale={locale} />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label={repo.name}>
+          {([
+            ["code", Code2, t.githost.files_title],
+            ["commits", GitCommitHorizontal, t.githost.commits_title],
+            ["branches", GitBranch, t.githost.branches],
+            ["pulls", GitPullRequest, t.githost.pull_requests],
+          ] as const).map(([key, Icon, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => {
+                setTab(key)
+                setCommitDetail(null)
+              }}
+              className={cn(
+                "inline-flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition-colors",
+                tab === key
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+              {key === "commits" && commits.length > 0 ? (
+                <span className="rounded-full bg-secondary px-1.5 text-[10px] font-bold text-secondary-foreground">
+                  {commits.length}
+                </span>
+              ) : null}
+              {key === "pulls" && pulls.length > 0 ? (
+                <span className="rounded-full bg-secondary px-1.5 text-[10px] font-bold text-secondary-foreground">
+                  {pulls.length}
+                </span>
+              ) : null}
+            </button>
+          ))}
         </div>
+        <label className="flex items-center gap-2 pb-2 text-xs font-semibold text-muted-foreground">
+          <GitBranch className="h-3.5 w-3.5" />
+          <select
+            value={branch}
+            onChange={(e) => {
+              setBranch(e.target.value)
+              setCommitDetail(null)
+            }}
+            className="h-8 w-40 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
+            aria-label={t.githost.default_branch}
+          >
+            {repo.branches.length === 0 ? <option value={repo.defaultBranch}>{repo.defaultBranch}</option> : null}
+            {repo.branches.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
-        <div className="min-w-0 space-y-6">
-          <LanguagesSection languages={languages} t={t} />
-          <ContributorsSection contributors={contributors} t={t} locale={locale} />
-          <BranchesSection repo={repo} t={t} copied={copied} onCopy={copy} />
-          <ScansSection scan={scan} scanning={scanning} canWrite={canWrite} onRun={runScan} t={t} />
+      {tab === "code" && (
+        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <FilesSection
+            files={branchFiles ?? repo.files}
+            tree={tree}
+            t={t}
+            loading={treeLoading}
+            selectedPath={selectedPath}
+            onSelect={setSelectedPath}
+          />
+          <FileViewer
+            blob={blob}
+            path={selectedPath}
+            loading={blobLoading}
+            error={blobError}
+            branch={branch}
+            t={t}
+            onCopy={copy}
+            copied={copied}
+          />
         </div>
+      )}
+
+      {tab === "commits" && (
+        <CommitsBrowser
+          commits={commits}
+          loading={commitsLoading}
+          branch={branch}
+          detail={commitDetail}
+          detailLoading={commitLoading}
+          onOpen={openCommit}
+          onBack={() => setCommitDetail(null)}
+          t={t}
+          locale={locale}
+        />
+      )}
+
+      {tab === "branches" && (
+        <BranchesBrowser
+          repo={repo}
+          branch={branch}
+          onBrowse={(name) => {
+            setBranch(name)
+            setTab("code")
+          }}
+          onCopy={copy}
+          copied={copied}
+          t={t}
+        />
+      )}
+
+      {tab === "pulls" && (
+        <PullRequestsBrowser pulls={pulls} loading={pullsLoading} t={t} locale={locale} />
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <LanguagesSection languages={languages} t={t} />
+        <ContributorsSection contributors={contributors} t={t} locale={locale} />
+        <ScansSection scan={scan} scanning={scanning} canWrite={canWrite} onRun={runScan} t={t} />
       </div>
 
       <AddFileModal
@@ -560,7 +794,21 @@ function StatCell({
   )
 }
 
-function FilesSection({ files, tree, t }: { files: GitTreeEntry[]; tree: TreeNode[]; t: ReturnType<typeof useI18n>["t"] }) {
+function FilesSection({
+  files,
+  tree,
+  t,
+  loading,
+  selectedPath,
+  onSelect,
+}: {
+  files: GitTreeEntry[]
+  tree: TreeNode[]
+  t: ReturnType<typeof useI18n>["t"]
+  loading?: boolean
+  selectedPath: string | null
+  onSelect: (path: string) => void
+}) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState("")
 
@@ -610,15 +858,20 @@ function FilesSection({ files, tree, t }: { files: GitTreeEntry[]; tree: TreeNod
     }
     const Icon = fileIcon(node.path)
     return (
-      <div
+      <button
         key={node.path}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-start transition-colors hover:bg-muted/50"
+        type="button"
+        onClick={() => onSelect(node.path)}
+        className={cn(
+          "flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-start transition-colors hover:bg-muted/50",
+          selectedPath === node.path && "bg-primary/10 text-primary"
+        )}
         style={indent}
       >
         <span className="w-3.5 shrink-0" />
-        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <Icon className="h-4 w-4 shrink-0" />
         <span className="truncate font-mono text-xs">{node.name}</span>
-      </div>
+      </button>
     )
   }
 
@@ -640,8 +893,13 @@ function FilesSection({ files, tree, t }: { files: GitTreeEntry[]; tree: TreeNod
         </div>
       }
     >
-      <div className="max-h-80 overflow-y-auto p-2">
-        {files.length === 0 ? (
+      <div className="max-h-[34rem] overflow-y-auto p-2">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t.platform.loading}
+          </div>
+        ) : files.length === 0 ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">{t.githost.no_files}</p>
         ) : matches ? (
           matches.length === 0 ? (
@@ -651,13 +909,21 @@ function FilesSection({ files, tree, t }: { files: GitTreeEntry[]; tree: TreeNod
               {matches.map((f) => {
                 const Icon = fileIcon(f.path)
                 return (
-                  <div key={f.path} className="flex items-center gap-2 px-2 py-1.5">
-                    <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <button
+                    key={f.path}
+                    type="button"
+                    onClick={() => onSelect(f.path)}
+                    className={cn(
+                      "flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-start hover:bg-muted/50",
+                      selectedPath === f.path && "bg-primary/10 text-primary"
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
                     <span className="truncate font-mono text-xs">{f.path}</span>
                     <span className="ml-auto shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[9px] font-bold text-secondary-foreground">
                       {langOf(f.path).label}
                     </span>
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -865,28 +1131,201 @@ function ScanMetric({
   )
 }
 
-function CommitsSection({
+function FileViewer({
+  blob,
+  path,
+  loading,
+  error,
+  branch,
+  t,
+  onCopy,
+  copied,
+}: {
+  blob: GitBlob | null
+  path: string | null
+  loading: boolean
+  error: string | null
+  branch: string
+  t: ReturnType<typeof useI18n>["t"]
+  onCopy: (key: string, text: string) => void
+  copied: string | null
+}) {
+  const isMarkdown = !!path && /\.(md|markdown)$/i.test(path)
+  const content = blob?.content ?? ""
+  return (
+    <SectionCard
+      icon={FileCode2}
+      title={path ?? t.githost.files_title}
+      count={blob ? `${(blob.size / 1024).toFixed(1)} KB` : undefined}
+      right={
+        <div className="flex items-center gap-1.5">
+          <Badge variant="outline" className="font-mono">
+            <GitBranch className="h-3 w-3" />
+            {branch}
+          </Badge>
+          {path && content ? (
+            <Button size="sm" variant="outline" onClick={() => onCopy("file", content)}>
+              {copied === "file" ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied === "file" ? t.githost.copied : t.githost.copy}
+            </Button>
+          ) : null}
+        </div>
+      }
+    >
+      {!path ? (
+        <div className="p-6 text-sm text-muted-foreground">{t.githost.select_file}</div>
+      ) : loading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t.platform.loading}
+        </div>
+      ) : error ? (
+        <div className="m-4 rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">{error}</div>
+      ) : !blob ? (
+        <div className="p-6 text-sm text-muted-foreground">{t.githost.no_files}</div>
+      ) : blob.binary ? (
+        <div className="p-6 text-sm text-muted-foreground">{t.githost.binary_file}</div>
+      ) : isMarkdown ? (
+        <div className="max-h-[42rem] overflow-auto p-6">
+          <MarkdownView content={content} />
+        </div>
+      ) : (
+        <div className="max-h-[42rem] overflow-auto">
+          <CodeView content={content} path={path} truncated={blob.truncated} t={t} />
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+function CodeView({
+  content,
+  path,
+  truncated,
+  t,
+}: {
+  content: string
+  path: string
+  truncated: boolean
+  t: ReturnType<typeof useI18n>["t"]
+}) {
+  const lines = content.split("\n")
+  return (
+    <div dir="ltr">
+      <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2 text-[11px] text-muted-foreground">
+        <span className="font-mono">{path}</span>
+        <span>
+          {lines.length} lines
+          {truncated ? ` · ${t.githost.truncated}` : ""}
+        </span>
+      </div>
+      <table className="w-full border-collapse font-mono text-xs">
+        <tbody>
+          {lines.map((line, index) => (
+            <tr key={index} className="align-top hover:bg-muted/30">
+              <td className="w-12 select-none border-e border-border/60 px-3 py-0.5 text-end text-[10px] text-muted-foreground">
+                {index + 1}
+              </td>
+              <td className="whitespace-pre-wrap break-words px-4 py-0.5 leading-5">{line || " "}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function CommitsBrowser({
   commits,
+  loading,
+  branch,
+  detail,
+  detailLoading,
+  onOpen,
+  onBack,
   t,
   locale,
 }: {
-  commits: GitRepository["commits"]
+  commits: GitCommit[]
+  loading: boolean
+  branch: string
+  detail: GitCommitDetail | null
+  detailLoading: boolean
+  onOpen: (sha: string) => void
+  onBack: () => void
   t: ReturnType<typeof useI18n>["t"]
   locale: string
 }) {
   const [query, setQuery] = useState("")
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return commits
     return commits.filter(
-      (c) =>
-        c.message.toLowerCase().includes(q) ||
-        c.author.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        c.sha.toLowerCase().includes(q)
+      (commit) =>
+        commit.message.toLowerCase().includes(q) ||
+        commit.author.toLowerCase().includes(q) ||
+        commit.email.toLowerCase().includes(q) ||
+        commit.sha.toLowerCase().includes(q)
     )
   }, [commits, query])
+
+  if (detail || detailLoading) {
+    return (
+      <SectionCard
+        icon={GitCommitHorizontal}
+        title={detail ? shortSha(detail.sha) : t.platform.loading}
+        right={
+          <Button size="sm" variant="outline" onClick={onBack}>
+            <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" />
+            {t.githost.commits_title}
+          </Button>
+        }
+      >
+        {detailLoading || !detail ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t.platform.loading}
+          </div>
+        ) : (
+          <div className="space-y-5 p-5">
+            <div>
+              <h3 className="text-lg font-bold">{detail.message}</h3>
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Avatar name={detail.author} size="sm" />
+                <span className="font-semibold text-foreground">{detail.author}</span>
+                {detail.email ? `<${detail.email}>` : null}
+                <span>·</span>
+                <span>{timeAgo(detail.date, locale)}</span>
+                <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">{detail.sha}</code>
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-full bg-secondary px-2.5 py-1">{detail.entries.length} {t.githost.files}</span>
+              <span className="rounded-full bg-success/10 px-2.5 py-1 text-success">+{detail.additions}</span>
+              <span className="rounded-full bg-danger/10 px-2.5 py-1 text-danger">−{detail.deletions}</span>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-border">
+              {detail.entries.map((entry) => (
+                <div key={entry.path} className="flex items-center gap-3 border-b border-border px-3 py-2 text-xs last:border-0">
+                  <span className="w-5 shrink-0 rounded bg-secondary py-0.5 text-center font-mono text-[10px] text-secondary-foreground">
+                    {entry.status}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-mono">{entry.path}</span>
+                  <span className="shrink-0 text-success">+{entry.additions}</span>
+                  <span className="shrink-0 text-danger">−{entry.deletions}</span>
+                </div>
+              ))}
+            </div>
+            {detail.patch ? (
+              <pre dir="ltr" className="max-h-[30rem] overflow-auto rounded-xl border border-border bg-muted/30 p-4 font-mono text-[11px] leading-5">
+                {detail.patch}
+              </pre>
+            ) : null}
+          </div>
+        )}
+      </SectionCard>
+    )
+  }
 
   return (
     <SectionCard
@@ -894,46 +1333,174 @@ function CommitsSection({
       title={t.githost.commits_title}
       count={String(commits.length)}
       right={
-        <div className="relative w-44 sm:w-56">
-          <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t.search.placeholder}
-            aria-label={t.search.placeholder}
-            className="h-8 w-full rounded-md border border-border bg-background ps-8 pe-2 text-xs focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="font-mono">
+            <GitBranch className="h-3 w-3" />
+            {branch}
+          </Badge>
+          <div className="relative w-40 sm:w-56">
+            <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t.search.placeholder}
+              aria-label={t.search.placeholder}
+              className="h-8 w-full rounded-md border border-border bg-background ps-8 pe-2 text-xs focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
         </div>
       }
     >
-      {commits.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted-foreground">{t.githost.no_commits}</p>
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t.platform.loading}
+        </div>
+      ) : commits.length === 0 ? (
+        <p className="px-5 py-8 text-sm text-muted-foreground">{t.githost.no_commits}</p>
       ) : (
-        <div className="relative">
-          <span aria-hidden className="absolute bottom-6 start-[2.35rem] top-6 w-px bg-border" />
-          <div className="max-h-[26rem] overflow-y-auto py-1">
-            {filtered.map((c) => (
-              <div key={c.sha} className="relative flex items-start gap-3 px-5 py-2">
-                <span className="relative z-hero mt-0.5 shrink-0">
-                  <Avatar name={c.author} size="sm" />
+        <div className="divide-y divide-border">
+          {filtered.map((commit) => (
+            <button
+              key={commit.sha}
+              type="button"
+              onClick={() => onOpen(commit.sha)}
+              className="flex w-full cursor-pointer items-start gap-3 px-5 py-3 text-start transition-colors hover:bg-muted/40"
+            >
+              <Avatar name={commit.author} size="sm" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{commit.message}</span>
+                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                  <code className="rounded bg-secondary px-1 py-px font-mono text-[10px]">{shortSha(commit.sha)}</code>
+                  <span className="truncate">
+                    {commit.author}
+                    {commit.email ? ` <${commit.email}>` : ""}
+                  </span>
+                  <span className="whitespace-nowrap">{timeAgo(commit.date, locale)}</span>
+                </span>
+              </span>
+              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+            </button>
+          ))}
+          {filtered.length === 0 ? (
+            <p className="px-5 py-8 text-center text-sm text-muted-foreground">{t.search.no_results}</p>
+          ) : null}
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+function BranchesBrowser({
+  repo,
+  branch,
+  onBrowse,
+  onCopy,
+  copied,
+  t,
+}: {
+  repo: GitRepository
+  branch: string
+  onBrowse: (name: string) => void
+  onCopy: (key: string, text: string) => void
+  copied: string | null
+  t: ReturnType<typeof useI18n>["t"]
+}) {
+  return (
+    <SectionCard icon={GitBranch} title={t.githost.branches} count={String(repo.branches.length)}>
+      {repo.branches.length === 0 ? (
+        <p className="px-5 py-8 text-sm text-muted-foreground">{t.githost.no_commits}</p>
+      ) : (
+        <div className="divide-y divide-border">
+          {repo.branches.map((name) => (
+            <div key={name} className={cn("flex flex-wrap items-center gap-3 px-5 py-3", name === branch && "bg-primary/5")}>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <GitBranch className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-mono text-sm font-semibold">{name}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {name === repo.defaultBranch ? t.githost.default_branch : t.githost.branch}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => onCopy(`branch-${name}`, name)}>
+                  {copied === `branch-${name}` ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                  {t.githost.copy}
+                </Button>
+                <Button size="sm" onClick={() => onBrowse(name)}>
+                  <Code2 className="h-3.5 w-3.5" />
+                  {t.githost.browse}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+function PullRequestsBrowser({
+  pulls,
+  loading,
+  t,
+  locale,
+}: {
+  pulls: FactoryPullRequest[]
+  loading: boolean
+  t: ReturnType<typeof useI18n>["t"]
+  locale: string
+}) {
+  return (
+    <SectionCard icon={GitPullRequest} title={t.githost.pull_requests} count={String(pulls.length)}>
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t.platform.loading}
+        </div>
+      ) : pulls.length === 0 ? (
+        <EmptyState icon={GitPullRequest} title={t.githost.no_pull_requests} description={t.githost.no_pull_requests_hint} />
+      ) : (
+        <div className="divide-y divide-border">
+          {pulls.map((pull) => {
+            const failed = pull.checks.filter((check) => check.status === "FAILED").length
+            return (
+              <Link
+                key={pull.id}
+                href={`/dashboard/factory?run=${pull.runId}`}
+                className="flex flex-wrap items-start gap-3 px-5 py-4 transition-colors hover:bg-muted/40"
+              >
+                <span className={cn(
+                  "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                  pull.status === "MERGED" ? "bg-success/10 text-success" : pull.status === "CLOSED" ? "bg-danger/10 text-danger" : "bg-primary/10 text-primary"
+                )}>
+                  <GitPullRequest className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{c.message}</p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                    <code className="rounded bg-secondary px-1 py-px font-mono text-[10px]">{shortSha(c.sha)}</code>
-<span className="min-w-0 truncate">
-                      {c.author}
-                      {c.email ? ` <${c.email}>` : ""}
-                    </span>
-                    <span className="whitespace-nowrap">{timeAgo(c.date, locale)}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold">#{pull.number}</span>
+                    <span className="truncate text-sm font-semibold">{pull.title}</span>
+                    <Badge variant={pull.status === "MERGED" ? "success" : pull.status === "CLOSED" ? "danger" : "outline"}>
+                      {pull.status}
+                    </Badge>
+                    {pull.risk ? <Badge variant="secondary">{pull.risk}</Badge> : null}
+                  </div>
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <code className="rounded bg-secondary px-1.5 py-0.5 font-mono">{pull.sourceBranch}</code>
+                    <span>→</span>
+                    <code className="rounded bg-secondary px-1.5 py-0.5 font-mono">{pull.targetBranch}</code>
+                    <span>·</span>
+                    <span>{pull.changedFiles.length} {t.githost.files}</span>
+                    <span>·</span>
+                    <span>{timeAgo(pull.createdAt, locale)}</span>
+                    {failed > 0 ? <span className="font-bold text-danger">· {failed} checks failed</span> : null}
                   </p>
                 </div>
-              </div>
-            ))}
-            {filtered.length === 0 && (
-              <p className="px-5 py-6 text-center text-sm text-muted-foreground">{t.search.no_results}</p>
-            )}
-          </div>
+                <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+              </Link>
+            )
+          })}
         </div>
       )}
     </SectionCard>

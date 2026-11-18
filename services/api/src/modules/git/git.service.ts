@@ -12,12 +12,16 @@ import {
   catBlobSize,
   cleanRepoName,
   commitFileInBare,
+  getCommitDetail,
   hashToken,
   headSha,
   initBareRepo,
+  isSafeGitRef,
   listBranches,
   listCommits,
+  listCommitsAt,
   listTree,
+  listTreeAt,
   NAME_RE,
   randomToken,
   repoStoragePath,
@@ -25,6 +29,7 @@ import {
   runGitPiped,
   calculateRepoBytes,
   findReadme,
+  showBlob,
 } from "./git-host"
 import { listSourceFiles } from "../../common/git"
 import { NotificationType, ScanStatus, Severity } from "@prisma/client"
@@ -249,6 +254,69 @@ export class GitService {
     }
 
     return { ...repo, branches, commits, files, readme }
+  }
+
+  // ------------------------------------------------------------------ //
+  //  Read-only repository browser                                       //
+  // ------------------------------------------------------------------ //
+
+  private async browserRepo(organizationId: string, repositoryId: string) {
+    const repo = await this.prisma.gitRepository.findFirst({
+      where: { id: repositoryId, organizationId },
+      select: { id: true, name: true, storagePath: true, defaultBranch: true },
+    })
+    if (!repo) throw new NotFoundException("Repository not found")
+    return repo
+  }
+
+  private browserRef(ref: string | undefined, fallback: string): string {
+    const value = (ref ?? "").trim() || fallback
+    if (!isSafeGitRef(value)) throw new BadRequestException("Invalid repository ref")
+    return value
+  }
+
+  async treeAt(organizationId: string, repositoryId: string, ref?: string) {
+    const repo = await this.browserRepo(organizationId, repositoryId)
+    const branch = this.browserRef(ref, repo.defaultBranch)
+    const entries = await listTreeAt(repo.storagePath, branch).catch(() => [])
+    return { ref: branch, entries }
+  }
+
+  async fileAt(organizationId: string, repositoryId: string, path: string, ref?: string) {
+    const repo = await this.browserRepo(organizationId, repositoryId)
+    const branch = this.browserRef(ref, repo.defaultBranch)
+    if (!path || path.length > 1000) throw new BadRequestException("A file path is required")
+    const content = await showBlob(repo.storagePath, branch, path)
+    if (content === null) throw new NotFoundException("File not found at this ref")
+    const binary = content.includes("\u0000")
+    return {
+      path,
+      ref: branch,
+      size: Buffer.byteLength(content, "utf8"),
+      binary,
+      truncated: !binary && content.length > 500_000,
+      content: binary ? null : content.slice(0, 500_000),
+    }
+  }
+
+  async commitsAt(organizationId: string, repositoryId: string, ref?: string, limit?: string) {
+    const repo = await this.browserRepo(organizationId, repositoryId)
+    const branch = this.browserRef(ref, repo.defaultBranch)
+    const count = Number(limit ?? 40)
+    return {
+      ref: branch,
+      commits: await listCommitsAt(repo.storagePath, branch, Number.isFinite(count) ? count : 40).catch(() => []),
+    }
+  }
+
+  async commitAt(organizationId: string, repositoryId: string, sha: string) {
+    const repo = await this.browserRepo(organizationId, repositoryId)
+    if (!/^[0-9a-f]{7,40}$/i.test(sha)) throw new BadRequestException("Invalid commit SHA")
+    try {
+      return await getCommitDetail(repo.storagePath, sha)
+    } catch {
+      throw new NotFoundException("Commit not found")
+    }
   }
 
   async deleteRepository(organizationId: string, repositoryId: string) {

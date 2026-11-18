@@ -633,6 +633,9 @@ export interface Dictionary {
     read_only: string
     refresh: string
     confirm_unlink: string
+    hosted: string
+    hosted_hint: string
+    open: string
   }
   admin: {
     tab: string
@@ -759,6 +762,14 @@ export interface Dictionary {
     contributors: string
     no_commits: string
     no_files: string
+    pull_requests: string
+    no_pull_requests: string
+    no_pull_requests_hint: string
+    select_file: string
+    binary_file: string
+    truncated: string
+    browse: string
+    branch: string
   }
   dev: {
     title: string
@@ -1799,6 +1810,9 @@ export const dictionaries: Record<Locale, Dictionary> = {
       read_only: "يستطيع المديرون ربط وفك ربط المستودعات.",
       refresh: "تحديث",
       confirm_unlink: "سيُزال المستودع من هذا المشروع مع بقاء القضايا المفحوصة.",
+      hosted: "المستودعات المستضافة",
+      hosted_hint: "مستودعات Git المستضافة على TechVerse والمرتبطة بهذا المشروع.",
+      open: "فتح المستودع",
     },
     admin: {
       tab: "الإدارة",
@@ -1925,6 +1939,14 @@ export const dictionaries: Record<Locale, Dictionary> = {
       contributors: "المساهمون",
       no_commits: "لا توجد التزامات بعد",
       no_files: "لا توجد ملفات",
+      pull_requests: "طلبات السحب",
+      no_pull_requests: "لا توجد طلبات سحب",
+      no_pull_requests_hint: "ستظهر طلبات السحب التي ينشئها مصنع البرمجيات هنا.",
+      select_file: "اختر ملفاً لعرضه",
+      binary_file: "ملف ثنائي — لا يمكن عرضه كنص.",
+      truncated: "معاينة مقتطعة",
+      browse: "استعراض",
+      branch: "فرع",
     },
     dev: {
       title: "تحليل الكود",
@@ -3114,6 +3136,9 @@ admin: "Administration",
       read_only: "Managers can link and unlink repositories.",
       refresh: "Refresh",
       confirm_unlink: "This repository will be removed from this project. Existing issues will be kept.",
+      hosted: "Hosted repositories",
+      hosted_hint: "TechVerse-hosted Git repositories linked to this project.",
+      open: "Open repository",
     },
     admin: {
       tab: "Administration",
@@ -3240,6 +3265,14 @@ admin: "Administration",
       contributors: "Contributors",
       no_commits: "No commits yet",
       no_files: "No files yet",
+      pull_requests: "Pull requests",
+      no_pull_requests: "No pull requests",
+      no_pull_requests_hint: "Pull requests created by Factory runs will appear here.",
+      select_file: "Select a file to view",
+      binary_file: "Binary file — preview unavailable.",
+      truncated: "preview truncated",
+      browse: "Browse",
+      branch: "Branch",
     },
     dev: {
       title: "Code Analysis",
@@ -4429,6 +4462,9 @@ admin: "Administration",
       read_only: "Les gestionnaires peuvent relier/dissocier les dépôts.",
       refresh: "Actualiser",
       confirm_unlink: "Ce dépôt sera retiré de ce projet. Les problèmes existants seront conservés.",
+      hosted: "Dépôts hébergés",
+      hosted_hint: "Dépôts Git hébergés par TechVerse et liés à ce projet.",
+      open: "Ouvrir le dépôt",
     },
     admin: {
       tab: "Administration",
@@ -4555,6 +4591,14 @@ admin: "Administration",
       contributors: "Contributeurs",
       no_commits: "Aucun commit pour le moment",
       no_files: "Aucun fichier",
+      pull_requests: "Pull requests",
+      no_pull_requests: "Aucune pull request",
+      no_pull_requests_hint: "Les pull requests créées par les exécutions Factory apparaîtront ici.",
+      select_file: "Sélectionnez un fichier à afficher",
+      binary_file: "Fichier binaire — aperçu indisponible.",
+      truncated: "aperçu tronqué",
+      browse: "Parcourir",
+      branch: "Branche",
     },
     dev: {
       title: "Analyse de Code",

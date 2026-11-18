@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from "@nestjs/common"
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from "@nestjs/common"
 import { GitService } from "./git.service"
 import { CreateGitRepositoryDto, CommitFileDto, CreateGitTokenDto } from "./dto"
 import { OrgGuard } from "../../common/guards/org.guard"
@@ -27,6 +27,44 @@ export class GitController {
   @Get("repositories/:repositoryId")
   detail(@Param("id") orgId: string, @Param("repositoryId") repositoryId: string) {
     return this.git.getDetail(orgId, repositoryId)
+  }
+
+  @Get("repositories/:repositoryId/tree")
+  tree(
+    @Param("id") orgId: string,
+    @Param("repositoryId") repositoryId: string,
+    @Query("ref") ref?: string
+  ) {
+    return this.git.treeAt(orgId, repositoryId, ref)
+  }
+
+  @Get("repositories/:repositoryId/blob")
+  blob(
+    @Param("id") orgId: string,
+    @Param("repositoryId") repositoryId: string,
+    @Query("path") path: string,
+    @Query("ref") ref?: string
+  ) {
+    return this.git.fileAt(orgId, repositoryId, path, ref)
+  }
+
+  @Get("repositories/:repositoryId/commits")
+  commits(
+    @Param("id") orgId: string,
+    @Param("repositoryId") repositoryId: string,
+    @Query("ref") ref?: string,
+    @Query("limit") limit?: string
+  ) {
+    return this.git.commitsAt(orgId, repositoryId, ref, limit)
+  }
+
+  @Get("repositories/:repositoryId/commits/:sha")
+  commit(
+    @Param("id") orgId: string,
+    @Param("repositoryId") repositoryId: string,
+    @Param("sha") sha: string
+  ) {
+    return this.git.commitAt(orgId, repositoryId, sha)
   }
 
   @Delete("repositories/:repositoryId")

@@ -365,7 +365,7 @@ export interface Project {
   dueDate: string | null
   visibility: string
   createdAt: string
-  _count: { tasks: number; workflows: number; repositories: number }
+  _count: { tasks: number; workflows: number; repositories: number; gitRepositories: number }
 }
 
 export interface WorkflowColumn {
@@ -619,6 +619,23 @@ export interface GitRepository {
   files: GitTreeEntry[]
   readme: { path: string; content: string } | null
   project: { id: string; name: string } | null
+}
+
+export interface GitBlob {
+  path: string
+  ref: string
+  size: number
+  binary: boolean
+  truncated: boolean
+  content: string | null
+}
+
+export interface GitCommitDetail extends GitCommit {
+  parents: string[]
+  entries: { path: string; status: string; additions: number; deletions: number }[]
+  additions: number
+  deletions: number
+  patch: string
 }
 
 export interface GitToken {
@@ -2607,6 +2624,41 @@ export const api = {
       token,
       orgId,
     })
+  },
+
+  gitRepositoryTree(token: string, orgId: string, repositoryId: string, ref?: string) {
+    const q = ref ? `?ref=${encodeURIComponent(ref)}` : ""
+    return request<{ ref: string; entries: GitTreeEntry[] }>(
+      `/organizations/${orgId}/git/repositories/${repositoryId}/tree${q}`,
+      { token, orgId }
+    )
+  },
+
+  gitRepositoryFile(token: string, orgId: string, repositoryId: string, path: string, ref?: string) {
+    const q = new URLSearchParams({ path })
+    if (ref) q.set("ref", ref)
+    return request<GitBlob>(`/organizations/${orgId}/git/repositories/${repositoryId}/blob?${q.toString()}`, {
+      token,
+      orgId,
+    })
+  },
+
+  gitRepositoryCommits(token: string, orgId: string, repositoryId: string, ref?: string, limit?: number) {
+    const q = new URLSearchParams()
+    if (ref) q.set("ref", ref)
+    if (limit) q.set("limit", String(limit))
+    const suffix = q.toString() ? `?${q.toString()}` : ""
+    return request<{ ref: string; commits: GitCommit[] }>(
+      `/organizations/${orgId}/git/repositories/${repositoryId}/commits${suffix}`,
+      { token, orgId }
+    )
+  },
+
+  gitRepositoryCommit(token: string, orgId: string, repositoryId: string, sha: string) {
+    return request<GitCommitDetail>(
+      `/organizations/${orgId}/git/repositories/${repositoryId}/commits/${encodeURIComponent(sha)}`,
+      { token, orgId }
+    )
   },
 
   gitDeleteRepository(token: string, orgId: string, repositoryId: string) {
