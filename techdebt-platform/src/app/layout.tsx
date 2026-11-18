@@ -42,7 +42,7 @@ export const viewport: Viewport = {
 
 const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('techdebt-theme')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.setAttribute('data-theme',d?'dark':'light');if(d)r.classList.add('dark');r.style.colorScheme=d?'dark':'light';}catch(e){}})();`
 
-export default async function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Force request-time rendering so the security proxy's per-request CSP nonce
   // can be applied to inline scripts (static prerendering has no request, so
   // no nonce would be injected and the strict CSP would block hydration).

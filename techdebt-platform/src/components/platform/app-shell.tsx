@@ -6,7 +6,9 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   Activity,
   Banknote,
+  Code2,
   Factory,
+  Rocket,
   BookOpenText,
   Bot,
   BrainCircuit,
@@ -62,6 +64,7 @@ interface NavEntry {
   href: string
   key: PlatformKey
   icon: LucideIcon
+  match?: string[]
 }
 
 function OrgSwitcher({ collapsed }: { collapsed?: boolean }) {
@@ -405,37 +408,22 @@ function SidebarContent({ collapsed, onToggle, onNavigate }: {
   const role = currentOrg?.role ?? null
 
   const sections = useMemo(() => {
-    const meta: Record<string, { href: string; icon: LucideIcon }> = {
+    const meta: Record<string, { href: string; icon: LucideIcon; match?: string[] }> = {
       overview: { href: "/dashboard", icon: LayoutDashboard },
       projects: { href: "/dashboard/projects", icon: FolderKanban },
-      repositories: { href: "/dashboard/repositories", icon: GitBranch },
       messages: { href: "/dashboard/messages", icon: MessageSquare },
-      teams: { href: "/dashboard/teams", icon: Users },
-      dev: { href: "/dashboard/dev", icon: Activity },
-      dev_rules: { href: "/dashboard/dev/rules", icon: SlidersHorizontal },
-      issues: { href: "/dashboard/dev/issues", icon: ShieldAlert },
-      pipelines: { href: "/dashboard/pipelines", icon: Workflow },
-      servers: { href: "/dashboard/servers", icon: Server },
-      ai: { href: "/dashboard/ai", icon: BrainCircuit },
-      agent_factory: { href: "/dashboard/agents", icon: Bot },
-      factory: { href: "/dashboard/factory", icon: Factory },
-      service_desk: { href: "/dashboard/service-desk", icon: Headset },
-      service_requests: { href: "/dashboard/service-desk/requests", icon: ClipboardList },
-      service_incidents: { href: "/dashboard/service-desk/incidents", icon: Siren },
-      service_knowledge: { href: "/dashboard/service-desk/knowledge", icon: BookOpenText },
-      timesheet: { href: "/dashboard/timesheet", icon: CalendarClock },
-      leave: { href: "/dashboard/leave", icon: CalendarCheck },
-      leave_settings: { href: "/dashboard/leave/settings", icon: Settings2 },
-      holidays: { href: "/dashboard/holidays", icon: PartyPopper },
-      payroll: { href: "/dashboard/payroll", icon: Banknote },
+      code: { href: "/dashboard/dev", icon: Code2, match: ["/dashboard/dev", "/dashboard/repositories"] },
+      delivery: { href: "/dashboard/pipelines", icon: Rocket, match: ["/dashboard/pipelines", "/dashboard/servers"] },
+      factory: { href: "/dashboard/factory", icon: Factory, match: ["/dashboard/factory", "/dashboard/agents", "/dashboard/ai"] },
+      service_desk: { href: "/dashboard/service-desk", icon: Headset, match: ["/dashboard/service-desk"] },
+      people: { href: "/dashboard/people", icon: Users, match: ["/dashboard/people", "/dashboard/timesheet", "/dashboard/leave", "/dashboard/holidays", "/dashboard/payroll", "/dashboard/teams"] },
       admin: { href: "/dashboard/admin", icon: ShieldCheck },
     }
 
     const titles: Record<(typeof NAV_SECTIONS)[number]["id"], string> = {
       workspace: t.platform.workspace,
       engineering: t.platform.engineering,
-      service_desk: t.platform.service_desk_section,
-      management: t.platform.management,
+      operations: t.platform.operations,
       admin: t.platform.admin,
     }
 
@@ -447,6 +435,7 @@ function SidebarContent({ collapsed, onToggle, onNavigate }: {
           href: meta[item.key].href,
           key: item.key as PlatformKey,
           icon: meta[item.key].icon,
+          match: meta[item.key].match,
         })),
     })).filter((section) => section.items.length > 0)
   }, [t, role])
@@ -483,8 +472,9 @@ function SidebarContent({ collapsed, onToggle, onNavigate }: {
             <div className="space-y-0.5">
               {section.items.map((entry) => {
                 const active =
-                  pathname === entry.href ||
-                  (entry.href !== "/dashboard" && pathname.startsWith(entry.href))
+                  (entry.match ?? [entry.href]).some((prefix) =>
+                    prefix === "/dashboard" ? pathname === prefix : pathname === prefix || pathname.startsWith(`${prefix}/`)
+                  )
                 return (
                   <NavItem
                     key={entry.href}
@@ -513,15 +503,17 @@ function TopbarTitle() {
   const { t } = useI18n()
   const title = useMemo(() => {
     const map: [string, string][] = [
+      ["/dashboard/people", t.platform.people],
+      ["/dashboard/repositories", t.platform.code],
       ["/dashboard/dev/issues", t.platform.issues],
       ["/dashboard/dev/rules", t.platform.dev_rules],
-      ["/dashboard/dev", t.platform.dev],
-      ["/dashboard/pipelines", t.platform.pipelines],
-      ["/dashboard/servers", t.platform.servers],
+      ["/dashboard/dev", t.platform.code],
+      ["/dashboard/pipelines", t.platform.delivery],
+      ["/dashboard/servers", t.platform.delivery],
       ["/dashboard/ai", t.platform.ai],
       ["/dashboard/agents", t.platform.agent_factory],
+      ["/dashboard/factory", t.platform.factory],
       ["/dashboard/projects", t.platform.projects],
-      ["/dashboard/repositories", t.platform.repositories],
       ["/dashboard/messages", t.platform.messages],
       ["/dashboard/teams", t.platform.teams],
       ["/dashboard/timesheet", t.platform.timesheet],
@@ -531,6 +523,8 @@ function TopbarTitle() {
       ["/dashboard/service-desk/requests", t.platform.service_requests],
       ["/dashboard/service-desk/incidents", t.platform.service_incidents],
       ["/dashboard/service-desk/knowledge", t.platform.service_knowledge],
+      ["/dashboard/service-desk/catalog", t.platform.service_catalog],
+      ["/dashboard/service-desk/sla", t.platform.service_sla],
       ["/dashboard/service-desk", t.platform.service_desk],
       ["/dashboard/admin", t.platform.admin],
       ["/dashboard", t.platform.overview],

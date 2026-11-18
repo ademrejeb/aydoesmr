@@ -43,8 +43,7 @@ const ROLES_ORDER = ["OWNER", "ADMIN", "MANAGER", "MEMBER", "VIEWER"] as const
 const SECTION_LABELS: Record<(typeof NAV_SECTIONS)[number]["id"], (t: Dictionary) => string> = {
   workspace: (t) => t.platform.workspace as string,
   engineering: (t) => t.platform.engineering as string,
-  service_desk: (t) => t.platform.service_desk_section as string,
-  management: (t) => t.platform.management as string,
+  operations: (t) => t.platform.operations as string,
   admin: (t) => t.platform.admin as string,
 }
 

@@ -121,7 +121,7 @@ export interface NavRequirement {
 }
 
 export interface NavSection {
-  id: "workspace" | "engineering" | "service_desk" | "management" | "admin"
+  id: "workspace" | "engineering" | "operations" | "admin"
   items: NavRequirement[]
 }
 
@@ -131,41 +131,22 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: "overview", cap: "view" },
       { key: "projects", cap: "view" },
-      { key: "repositories", cap: "git_read" },
       { key: "messages", cap: "view" },
-      { key: "teams", cap: "view" },
     ],
   },
   {
     id: "engineering",
     items: [
-      { key: "dev", cap: "git_read" },
-      { key: "dev_rules", cap: "view" },
-      { key: "issues", cap: "view" },
-      { key: "pipelines", cap: "pipeline_run" },
-      { key: "servers", cap: "view" },
-      { key: "ai", cap: "ai_use" },
-      { key: "agent_factory", cap: "ai_use" },
+      { key: "code", cap: "git_read" },
+      { key: "delivery", cap: "pipeline_run" },
       { key: "factory", cap: "ai_use" },
     ],
   },
   {
-    id: "service_desk",
+    id: "operations",
     items: [
       { key: "service_desk", cap: "service_read" },
-      { key: "service_requests", cap: "service_read" },
-      { key: "service_incidents", cap: "service_read" },
-      { key: "service_knowledge", cap: "service_read" },
-    ],
-  },
-  {
-    id: "management",
-    items: [
-      { key: "timesheet", min: "MEMBER" },
-      { key: "leave", min: "MEMBER" },
-      { key: "leave_settings", min: "MANAGER" },
-      { key: "holidays", cap: "view" },
-      { key: "payroll", min: "MANAGER" },
+      { key: "people", min: "MEMBER" },
     ],
   },
   {

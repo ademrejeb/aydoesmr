@@ -228,6 +228,12 @@ export interface Dictionary {
     issues: string
     agent_factory: string
     factory: string
+    code: string
+    delivery: string
+    people: string
+    operations: string
+    service_catalog: string
+    service_sla: string
     notifications: string
     no_notifications: string
     admin: string
@@ -1614,6 +1620,12 @@ export const dictionaries: Record<Locale, Dictionary> = {
       issues: "المشاكل",
       agent_factory: "وكلاء الذكاء",
       factory: "مصنع البرمجيات",
+      code: "صحة الكود",
+      delivery: "التسليم",
+      people: "الأشخاص",
+      operations: "العمليات",
+      service_catalog: "الكتالوج",
+      service_sla: "اتفاقيات الخدمة",
       notifications: "الإشعارات",
       no_notifications: "لا توجد إشعارات",
       admin: "الإدارة",
@@ -2923,6 +2935,12 @@ export const dictionaries: Record<Locale, Dictionary> = {
       issues: "Issues",
       agent_factory: "AI Agents",
       factory: "Software Factory",
+      code: "Code health",
+      delivery: "Delivery",
+      people: "People",
+      operations: "Operations",
+      service_catalog: "Catalog",
+      service_sla: "SLA",
       notifications: "Notifications",
       no_notifications: "No notifications",
 admin: "Administration",
@@ -4232,6 +4250,12 @@ admin: "Administration",
       issues: "Problèmes",
       agent_factory: "Agents IA",
       factory: "Usine logicielle",
+      code: "Santé du code",
+      delivery: "Livraison",
+      people: "Personnes",
+      operations: "Opérations",
+      service_catalog: "Catalogue",
+      service_sla: "SLA",
       notifications: "Notifications",
       no_notifications: "Aucune notification",
 admin: "Administration",
