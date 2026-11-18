@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common"
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
 import { promises as dns } from "node:dns"
 import { randomUUID } from "node:crypto"
 import * as net from "node:net"
 import { PrismaService } from "../../prisma/prisma.service"
 import { EncryptionService } from "../ai/encryption.service"
+import { PoliciesService } from "../policies/policies.service"
 import { CreateAgentConnectionDto, RunAgentDto, UpdateAgentConnectionDto } from "./dto"
 import { isPrivateAddress, requestJson, type JsonResponse } from "./egress"
 
@@ -34,7 +35,8 @@ export class AgentFactoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly encryption: EncryptionService
+    private readonly encryption: EncryptionService,
+    private readonly policies: PoliciesService
   ) {}
 
   private sanitize(row: ConnectionRow) {
@@ -248,6 +250,25 @@ export class AgentFactoryService {
       throw new BadRequestException("This agent connection is disabled")
     }
     await this.assertBaseUrl(conn.baseUrl)
+    const policy = await this.policies.check(
+      organizationId,
+      {
+        subject: "agent.run",
+        action: "run",
+        context: {
+          agent: { connectionId: conn.id, name: conn.name, agentId: conn.agentId },
+          budget: { requestedTokens: 0 },
+        },
+      },
+      userId
+    )
+    if (!policy.allowed || policy.requiresApproval) {
+      throw new ForbiddenException(
+        policy.allowed
+          ? `Agent run requires approval: ${policy.reasons.join("; ")}`
+          : `Agent run denied by policy: ${policy.reasons.join("; ")}`
+      )
+    }
     const raw = JSON.stringify(dto.input ?? {})
     if (Buffer.byteLength(raw, "utf8") > MAX_INPUT_BYTES) {
       throw new BadRequestException("Agent input is too large (max 128 KB)")

@@ -288,14 +288,14 @@ export class GitService {
   //  Scanning a hosted repository from disk                             //
   // ------------------------------------------------------------------ //
 
-  async scanHosted(organizationId: string, repositoryId: string, actorId: string) {
+  async scanHosted(organizationId: string, repositoryId: string, actorId: string, branch?: string) {
     const repo = await this.prisma.gitRepository.findFirst({ where: { id: repositoryId, organizationId } })
     if (!repo) throw new NotFoundException("Repository not found")
 
     const tmp = await fs.mkdtemp(join(tmpdir(), "tv-scan-"))
     try {
       await fs.rm(join(tmp, ".git"), { recursive: true, force: true }).catch(() => undefined)
-      await runGitGet(["clone", repo.storagePath, tmp], 120_000)
+      await runGitGet(branch ? ["clone", "--branch", branch, repo.storagePath, tmp] : ["clone", repo.storagePath, tmp], 120_000)
     } catch (e) {
       await fs.rm(tmp, { recursive: true, force: true }).catch(() => undefined)
       throw new ServiceUnavailableException(`Cannot materialize repository: ${(e as Error).message}`)
@@ -405,7 +405,7 @@ export class GitService {
           actorId,
           NotificationType.SCAN_COMPLETED,
           issues.length > 0 ? `${issues.length} issue(s) found in ${repo.name}` : `Clean scan of ${repo.name}`,
-          `${repo.defaultBranch} — ${files.length} files, ${lines} LoC, ${issues.length} findings`,
+          `${branch ?? repo.defaultBranch} — ${files.length} files, ${lines} LoC, ${issues.length} findings`,
           `/repositories/${repo.id}`
         )
       })

@@ -211,3 +211,73 @@ export function cleanRepoName(raw: string): string {
 }
 
 export const NAME_RE = /^[a-zA-Z0-9_.-]{1,100}$/
+export interface CommitFilesInput {
+  bareDir: string
+  branch: string
+  baseBranch?: string | null
+  files: { path: string; content: string }[]
+  message: string
+  authorName: string
+  authorEmail: string
+}
+
+/**
+ * Commit a set of files into one new commit on `branch` (created from
+ * `baseBranch` when supplied). Paths are validated before touching disk; the
+ * caller is responsible for content policy (protected paths, size).
+ */
+export async function commitFilesInBare(input: CommitFilesInput): Promise<CommitInfo> {
+  const { bareDir, branch, baseBranch, files, message, authorName, authorEmail } = input
+  if (files.length === 0) throw new Error("No files to commit")
+  for (const file of files) {
+    if (!/^[0-9A-Za-z._\/-]+$/.test(file.path)) throw new Error(`Invalid file path: ${file.path}`)
+  }
+  const tmp = await fs.mkdtemp(join(tmpdir(), "tv-factory-"))
+  try {
+    const work = join(tmp, "work")
+    await runGitGet(["clone", bareDir, work])
+    if (baseBranch) await runGitGet(["-C", work, "checkout", baseBranch])
+    await runGitGet(["-C", work, "checkout", "-B", branch]).catch(() =>
+      runGitGet(["-C", work, "checkout", "--orphan", branch])
+    )
+    const safeRoot = resolve(work)
+    for (const file of files) {
+      const abs = resolve(join(work, file.path))
+      if (abs !== safeRoot && !abs.startsWith(safeRoot + (process.platform === "win32" ? "\\" : "/"))) {
+        throw new Error(`Invalid file path: ${file.path}`)
+      }
+      await fs.mkdir(dirname(abs), { recursive: true })
+      await fs.writeFile(abs, file.content, "utf8")
+    }
+    await runGitGet(["-C", work, "add", "--", ...files.map((file) => file.path)])
+    await runGitGet([
+      "-C",
+      work,
+      "-c",
+      `user.name=${authorName}`,
+      "-c",
+      `user.email=${authorEmail}`,
+      "commit",
+      "-m",
+      message,
+    ])
+    await runGitGet(["-C", work, "push", bareDir, `HEAD:refs/heads/${branch}`])
+    const commits = await listCommits(bareDir, 1)
+    return commits[0] ?? { sha: "", author: authorName, email: authorEmail, date: new Date().toISOString(), message }
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+/** Fast-forward `target` to `source`; refuses if the move is not a fast-forward. */
+export async function mergeFastForward(bareDir: string, source: string, target: string): Promise<string> {
+  const sourceSha = (await runGitGet(["-C", bareDir, "rev-parse", `refs/heads/${source}`])).toString("utf8").trim()
+  if (!sourceSha) throw new Error("Source branch has no commits")
+  try {
+    await runGitGet(["-C", bareDir, "merge-base", "--is-ancestor", `refs/heads/${target}`, sourceSha])
+  } catch {
+    throw new Error("Merge is not a fast-forward; rebase the factory branch before merging")
+  }
+  await runGitGet(["-C", bareDir, "update-ref", `refs/heads/${target}`, sourceSha])
+  return sourceSha
+}

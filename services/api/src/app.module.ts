@@ -18,6 +18,8 @@ import { AiModule } from "./modules/ai/ai.module"
 import { AiActionsModule } from "./modules/ai-actions/ai-actions.module"
 import { AgentFactoryModule } from "./modules/agent-factory/agent-factory.module"
 import { PlannerModule } from "./modules/planner/planner.module"
+import { PoliciesModule } from "./modules/policies/policies.module"
+import { FactoryModule } from "./modules/factory/factory.module"
 import { NotificationsModule } from "./modules/notifications/notifications.module"
 import { ConversationsModule } from "./modules/conversations/conversations.module"
 import { TimesheetsModule } from "./modules/timesheets/timesheets.module"
@@ -55,6 +57,8 @@ import { StorageModule } from "./storage/storage.module"
     AiActionsModule,
     AgentFactoryModule,
     PlannerModule,
+    PoliciesModule,
+    FactoryModule,
     NotificationsModule,
     ConversationsModule,
     TimesheetsModule,

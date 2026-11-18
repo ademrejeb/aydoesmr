@@ -118,6 +118,7 @@ export class TasksService {
       )
     }
 
+    this.events.emit("task.created", { id: task.id, organizationId, projectId })
     this.emitTaskEvent(task)
     return task
   }
@@ -190,6 +191,7 @@ export class TasksService {
       include: { ...TASK_INCLUDE },
     })
 
+    this.events.emit("task.created", { id: task.id, organizationId, projectId })
     this.emitTaskEvent(task)
     return task
   }

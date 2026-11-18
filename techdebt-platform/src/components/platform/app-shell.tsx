@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   Activity,
   Banknote,
+  Factory,
   BookOpenText,
   Bot,
   BrainCircuit,
@@ -417,6 +418,7 @@ function SidebarContent({ collapsed, onToggle, onNavigate }: {
       servers: { href: "/dashboard/servers", icon: Server },
       ai: { href: "/dashboard/ai", icon: BrainCircuit },
       agent_factory: { href: "/dashboard/agents", icon: Bot },
+      factory: { href: "/dashboard/factory", icon: Factory },
       service_desk: { href: "/dashboard/service-desk", icon: Headset },
       service_requests: { href: "/dashboard/service-desk/requests", icon: ClipboardList },
       service_incidents: { href: "/dashboard/service-desk/incidents", icon: Siren },

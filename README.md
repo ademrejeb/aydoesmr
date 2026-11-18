@@ -50,6 +50,20 @@ troubleshooting.
 
 ---
 
+## Software Factory
+
+TechVerse now includes a governed software-factory foundation: explainable issue
+triage, versioned plans, specialist agent profiles, deterministic policy rules,
+isolated branch execution, real scan gates, independent review and human merge
+approval. See:
+
+- [`docs/architecture/software-factory.md`](docs/architecture/software-factory.md)
+- [`docs/engineering/SOFTWARE_FACTORY_LEDGER.md`](docs/engineering/SOFTWARE_FACTORY_LEDGER.md)
+
+The factory uses the existing project, Git, analysis, agent-connection, pipeline,
+notification and tenancy modules. It does not replace them, and it never claims
+test evidence that was not executed.
+
 ## Architecture
 
 ```text

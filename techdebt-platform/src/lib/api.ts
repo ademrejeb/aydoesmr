@@ -778,6 +778,212 @@ export interface AgentConnectionTest {
   }
 }
 
+
+// ------------------------- Software factory ------------------------- //
+
+export type FactoryRunStatus =
+  | "QUEUED"
+  | "TRIAGED"
+  | "PLANNED"
+  | "WAITING_APPROVAL"
+  | "EXECUTING"
+  | "QUALITY_CHECK"
+  | "WAITING_REVIEW"
+  | "READY_TO_MERGE"
+  | "MERGED"
+  | "FAILED"
+  | "BLOCKED"
+  | "CANCELLED"
+
+export type FactoryGateStatus = "PENDING" | "PASSED" | "FAILED" | "BLOCKED"
+
+export interface FactoryAgentProfile {
+  id: string
+  name: string
+  slug: string
+  role: string
+  description: string | null
+  instructions: string | null
+  connectionId: string | null
+  modelProviderId: string | null
+  model: string | null
+  capabilities: string[]
+  allowedTools: string[]
+  permissions: Record<string, unknown>
+  budgetTokens: number
+  timeoutSeconds: number
+  maxRetries: number
+  version: number
+  status: "active" | "disabled" | string
+  createdAt: string
+  updatedAt: string
+  connection?: { id: string; name: string; status: string } | null
+  modelProvider?: { id: string; name: string; type: string; defaultModel: string | null } | null
+}
+
+export interface FactoryIssueProfile {
+  id: string
+  taskId: string
+  classification: string
+  labels: string[]
+  complexity: number
+  risk: "low" | "medium" | "high" | string
+  autonomous: boolean
+  confidence: number
+  missingAcceptanceCriteria: boolean
+  duplicateOfIds: string[]
+  suggestedPriority: string | null
+  suggestedAgentRole: string | null
+  rationale: string[]
+  analyzedBy: string
+  model: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FactoryPlan {
+  id: string
+  runId: string
+  version: number
+  status: string
+  summary: string
+  steps: { title: string; detail: string }[]
+  files: { path: string; reason: string }[]
+  tests: string[]
+  acceptanceCriteria: string[]
+  risks: string[]
+  outOfScope: string[]
+  approvalRequired: boolean
+  generatedBy: string
+  model: string | null
+  reasoning: string | null
+  createdAt: string
+}
+
+export interface FactoryGate {
+  id: string
+  name: string
+  status: FactoryGateStatus
+  detail: string | null
+  evidence: Record<string, unknown>
+  scanId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FactoryApproval {
+  id: string
+  stage: string
+  status: "PENDING" | "APPROVED" | "REJECTED"
+  requestedRole: string | null
+  requestedById: string | null
+  decidedById: string | null
+  reason: string | null
+  createdAt: string
+  decidedAt: string | null
+}
+
+export interface FactoryEvent {
+  id: string
+  type: string
+  actorId: string | null
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
+export interface FactoryRunSummary {
+  id: string
+  status: FactoryRunStatus
+  stage: string
+  correlationId: string
+  branch: string | null
+  baseBranch: string | null
+  commitSha: string | null
+  planVersion: number | null
+  error: string | null
+  createdAt: string
+  updatedAt: string
+  task: { id: string; title: string; priority: string; status: string }
+  project: { id: string; name: string; key: string | null }
+  repository: { id: string; name: string; defaultBranch: string } | null
+  agentProfile: { id: string; name: string; role: string } | null
+  plans: { version: number; approvalRequired: boolean; generatedBy: string }[]
+  gates: { name: string; status: FactoryGateStatus }[]
+  approvals: { id: string; stage: string }[]
+}
+
+export interface FactoryRun extends Omit<FactoryRunSummary, "plans" | "gates" | "approvals"> {
+  projectId: string
+  taskId: string
+  repositoryId: string | null
+  agentProfileId: string | null
+  connectionId: string | null
+  metadata: Record<string, unknown>
+  startedAt: string | null
+  completedAt: string | null
+  plans: FactoryPlan[]
+  gates: FactoryGate[]
+  approvals: FactoryApproval[]
+  events: FactoryEvent[]
+  issueProfile: FactoryIssueProfile | null
+}
+
+export interface FactoryStats {
+  runs: Record<string, number>
+  gates: Record<string, number>
+  activeProfiles: number
+  pendingApprovals: number
+}
+
+export interface AutomationProposal {
+  id: string
+  fingerprint: string
+  title: string
+  description: string
+  category: string
+  frequency: number
+  estimatedMinutesSaved: number
+  complexity: string
+  risk: string
+  requiredPermissions: string[]
+  proposedWorkflow: Record<string, unknown>
+  evidence: Record<string, unknown>
+  status: "PENDING" | "APPROVED" | "REJECTED" | string
+  decisionReason: string | null
+  createdAt: string
+  decidedAt: string | null
+}
+
+export interface PolicyRule {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  category: string
+  effect: "ALLOW" | "DENY" | "REQUIRE_APPROVAL" | "WARN"
+  priority: number
+  enabled: boolean
+  scope: string
+  subject: string
+  conditions: { key: string; op: string; value?: unknown }[]
+  actions: Record<string, unknown>
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PolicyEvaluation {
+  id: string
+  subject: string
+  action: string | null
+  decision: string
+  allowed: boolean
+  reasons: string[]
+  context: Record<string, unknown>
+  ruleIds: string[]
+  createdAt: string
+}
+
 export interface GatewayStatus {
   baseUrl: string
   healthy: boolean
@@ -3066,6 +3272,197 @@ export const api = {
       "/service-desk/public/incidents",
       { method: "POST", body: dto }
     )
+  },
+
+
+  // ------------------------------ Factory ------------------------------ //
+
+  listFactoryRuns(token: string, orgId: string, status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : ""
+    return request<FactoryRunSummary[]>(`/organizations/${orgId}/factory/runs${q}`, { token, orgId })
+  },
+
+  getFactoryRun(token: string, orgId: string, runId: string) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}`, { token, orgId })
+  },
+
+  createFactoryRun(
+    dto: { taskId: string; repositoryId?: string; agentProfileId?: string; idempotencyKey?: string },
+    token: string,
+    orgId: string
+  ) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs`, {
+      method: "POST",
+      body: dto,
+      token,
+      orgId,
+    })
+  },
+
+  planFactoryRun(token: string, orgId: string, runId: string, useAi = false) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}/plan`, {
+      method: "POST",
+      body: { useAi },
+      token,
+      orgId,
+    })
+  },
+
+  approveFactoryRun(token: string, orgId: string, runId: string, decision: "APPROVED" | "REJECTED", reason?: string) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}/approve`, {
+      method: "POST",
+      body: { decision, reason },
+      token,
+      orgId,
+    })
+  },
+
+  executeFactoryRun(token: string, orgId: string, runId: string) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}/execute`, {
+      method: "POST",
+      body: {},
+      token,
+      orgId,
+    })
+  },
+
+  reviewFactoryRun(
+    token: string,
+    orgId: string,
+    runId: string,
+    dto: { decision: "APPROVED" | "REJECTED"; findings?: string[]; reason?: string; reviewerAgentRunId?: string }
+  ) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}/review`, {
+      method: "POST",
+      body: dto,
+      token,
+      orgId,
+    })
+  },
+
+  mergeFactoryRun(token: string, orgId: string, runId: string) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}/merge`, {
+      method: "POST",
+      body: {},
+      token,
+      orgId,
+    })
+  },
+
+  cancelFactoryRun(token: string, orgId: string, runId: string) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}/cancel`, {
+      method: "POST",
+      body: {},
+      token,
+      orgId,
+    })
+  },
+
+  factoryStats(token: string, orgId: string) {
+    return request<FactoryStats>(`/organizations/${orgId}/factory/stats`, { token, orgId })
+  },
+
+  listFactoryAgents(token: string, orgId: string) {
+    return request<FactoryAgentProfile[]>(`/organizations/${orgId}/factory/agents`, { token, orgId })
+  },
+
+  createFactoryAgent(
+    dto: {
+      name: string
+      slug: string
+      role: string
+      description?: string
+      instructions?: string
+      connectionId?: string
+      modelProviderId?: string
+      model?: string
+      allowedTools?: string[]
+      budgetTokens?: number
+      maxRetries?: number
+    },
+    token: string,
+    orgId: string
+  ) {
+    return request<FactoryAgentProfile>(`/organizations/${orgId}/factory/agents`, {
+      method: "POST",
+      body: dto,
+      token,
+      orgId,
+    })
+  },
+
+  updateFactoryAgent(
+    profileId: string,
+    dto: Partial<{
+      name: string
+      role: string
+      description: string | null
+      instructions: string | null
+      connectionId: string | null
+      modelProviderId: string | null
+      model: string | null
+      allowedTools: string[]
+      budgetTokens: number
+      maxRetries: number
+      status: string
+    }>,
+    token: string,
+    orgId: string
+  ) {
+    return request<FactoryAgentProfile>(`/organizations/${orgId}/factory/agents/${profileId}`, {
+      method: "PATCH",
+      body: dto,
+      token,
+      orgId,
+    })
+  },
+
+  deleteFactoryAgent(profileId: string, token: string, orgId: string) {
+    return request<{ ok: boolean }>(`/organizations/${orgId}/factory/agents/${profileId}`, {
+      method: "DELETE",
+      token,
+      orgId,
+    })
+  },
+
+  getFactoryIssueProfile(token: string, orgId: string, taskId: string) {
+    return request<FactoryIssueProfile>(`/organizations/${orgId}/factory/issues/${taskId}/profile`, { token, orgId })
+  },
+
+  classifyFactoryIssue(token: string, orgId: string, taskId: string, useAi = false) {
+    return request<FactoryIssueProfile>(`/organizations/${orgId}/factory/issues/${taskId}/classify`, {
+      method: "POST",
+      body: { useAi },
+      token,
+      orgId,
+    })
+  },
+
+  factoryAutomation(token: string, orgId: string) {
+    return request<AutomationProposal[]>(`/organizations/${orgId}/factory/automation`, { token, orgId })
+  },
+
+  decideFactoryAutomation(
+    token: string,
+    orgId: string,
+    proposalId: string,
+    decision: "APPROVED" | "REJECTED",
+    reason?: string
+  ) {
+    return request<AutomationProposal>(`/organizations/${orgId}/factory/automation/${proposalId}/decision`, {
+      method: "POST",
+      body: { decision, reason },
+      token,
+      orgId,
+    })
+  },
+
+  listPolicies(token: string, orgId: string) {
+    return request<PolicyRule[]>(`/organizations/${orgId}/policies`, { token, orgId })
+  },
+
+  listPolicyEvaluations(token: string, orgId: string) {
+    return request<PolicyEvaluation[]>(`/organizations/${orgId}/policies/evaluations`, { token, orgId })
   },
 
   // --------------------------- Sprint planner --------------------------- //

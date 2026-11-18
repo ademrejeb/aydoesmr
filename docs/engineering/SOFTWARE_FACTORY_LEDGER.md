@@ -1,0 +1,161 @@
+# Software Factory — Implementation Ledger
+
+Date: 2026-11-18
+Repository: `aydoesmr` (TechVerse)
+Branch: `main` (working tree)
+
+## Completed and verified
+
+| Capability | Evidence |
+|---|---|
+| Deterministic policy engine with priorities, specificity, condition operators, reasons | `src/modules/policies/policy.engine.ts`; 4 unit suites |
+| Policy CRUD + version snapshots + evaluation audit | `policies.service.ts`, migration `20261118120000_software_factory` |
+| Conservative baseline policies seeded lazily | `policies/defaults.ts`; `GET /policies` returned 4 rules |
+| Policy enforced on factory merge/patch/review/execute, `agent.run`, `pipeline.run` | `PoliciesService.check` calls in services |
+| Explainable issue triage (classification, labels, complexity, risk, duplicates, autonomy) | `factory.rules.ts`; API profile returned `agent-ready` / `needs-human` correctly |
+| Automatic triage on task creation | `TasksService` emits `task.created`; `FactoryService.onTaskCreated` |
+| Specialist agent registry with connection, tools, budgets, retries, version | `AgentProfile`; `POST /factory/agents` |
+| Versioned structured plans with files, tests, acceptance criteria, risks, out-of-scope | `FactoryPlan`; plan generation from repo tree keywords |
+| Optional AI enrichment for triage and planning, with heuristic fallback | `classifyWithAi`, `planWithAi` |
+| Full run state machine with correlation and idempotency | `FACTORY_TRANSITIONS`, `FactoryRun.correlationId/idempotencyKey`; duplicate create returned the same run |
+| Agent dispatch through the existing published agent connection | `AgentFactoryService.run`; mock agent returned files |
+| Patch validation and protected-path approval | `validatePatch`, `factory.patch` policy; traversal/git/oversize rejected in tests |
+| Real hosted-Git branch commit and fast-forward merge | `commitFilesInBare`, `mergeFastForward`; merged commit `73dbbff` verified with `git log`/`ls-tree` |
+| Quality gates with real engine evidence | `repository_scan` on branch; zero analyzed files blocks; mock gateway produced PASSED |
+| Independent review + same-agent denial | `factory.review` deny rule returned HTTP 403 for the execution agent run |
+| Human merge approval | `factory.merge` returned `WAITING_APPROVAL`; approval produced `MERGED` |
+| Append-only run trace + audit log | `FactoryEvent`, `AuditLog`; event sequence verified |
+| Automation discovery + explicit decision | `GET /factory/automation` returned a 10x triage proposal; `POST .../decision` recorded `APPROVED` |
+| Dashboard integrated into existing navigation/design system | `/dashboard/factory`, RTL screenshot verified; `next build` passes |
+
+## Modified existing modules
+
+| File | Change |
+|---|---|
+| `services/api/prisma/schema.prisma` | New enums/models; additive relations only |
+| `services/api/src/app.module.ts` | Register `PoliciesModule`, `FactoryModule` |
+| `services/api/src/modules/agent-factory/agent-factory.service.ts` | Policy check before external agent run |
+| `services/api/src/modules/agent-factory/agent-factory.module.ts` | Import policies; export service |
+| `services/api/src/modules/pipelines/pipelines.service.ts` | Policy check before pipeline trigger |
+| `services/api/src/modules/pipelines/pipelines.module.ts` | Import policies |
+| `services/api/src/modules/tasks/tasks.service.ts` | Emit `task.created` |
+| `services/api/src/modules/git/git.service.ts` | `scanHosted` accepts a branch |
+| `services/api/src/modules/git/git-host.ts` | `commitFilesInBare`, `mergeFastForward` |
+| `techdebt-platform/src/lib/api.ts` | Factory/policy types and calls |
+| `techdebt-platform/src/lib/access.ts` | Factory nav item |
+| `techdebt-platform/src/lib/i18n/dictionaries.ts` | Factory labels (AR/FR/EN) |
+| `techdebt-platform/src/components/platform/app-shell.tsx` | Factory route/icon |
+| `services/api/package.json` | `npm test` script |
+
+## New database objects
+
+- `PolicyRule`, `PolicyRuleVersion`, `PolicyEvaluation`
+- `AgentProfile`, `FactoryIssueProfile`, `FactoryRun`, `FactoryPlan`,
+  `FactoryEvent`, `FactoryApproval`, `FactoryQualityGate`
+- `AutomationProposal`
+- Enums: `PolicyEffect`, `FactoryRunStatus`, `FactoryApprovalStatus`,
+  `FactoryGateStatus`
+
+Migrations:
+- `20261118120000_software_factory`
+- `20261118130000_automation_proposals`
+
+Both applied cleanly to a fresh PostgreSQL 18 database with `prisma migrate deploy`.
+No existing table or column was altered or dropped.
+
+## API additions
+
+```
+GET    /organizations/:id/policies
+POST   /organizations/:id/policies
+PATCH  /organizations/:id/policies/:ruleId
+DELETE /organizations/:id/policies/:ruleId
+POST   /organizations/:id/policies/evaluate
+GET    /organizations/:id/policies/evaluations
+POST   /organizations/:id/policies/defaults
+
+GET    /organizations/:id/factory/agents
+POST   /organizations/:id/factory/agents
+PATCH  /organizations/:id/factory/agents/:profileId
+DELETE /organizations/:id/factory/agents/:profileId
+GET    /organizations/:id/factory/runs
+POST   /organizations/:id/factory/runs
+GET    /organizations/:id/factory/runs/:runId
+POST   /organizations/:id/factory/runs/:runId/plan
+POST   /organizations/:id/factory/runs/:runId/approve
+POST   /organizations/:id/factory/runs/:runId/execute
+POST   /organizations/:id/factory/runs/:runId/review
+POST   /organizations/:id/factory/runs/:runId/merge
+POST   /organizations/:id/factory/runs/:runId/cancel
+GET    /organizations/:id/factory/stats
+GET    /organizations/:id/factory/automation
+POST   /organizations/:id/factory/automation/:proposalId/decision
+GET    /organizations/:id/factory/issues/:taskId/profile
+POST   /organizations/:id/factory/issues/:taskId/classify
+```
+
+## Tests executed
+
+| Command | Result |
+|---|---|
+| `cd services/api && npm test` | 13 tests, 13 pass, 0 fail |
+| `npx tsc --noEmit` (API) | pass |
+| `npm run build` (API) | pass |
+| `npx tsc --noEmit` (dashboard) | pass |
+| `npm run build` (dashboard) | pass; `/dashboard/factory` generated |
+| `prisma validate` / `prisma generate` | pass |
+| `prisma migrate deploy` on fresh Postgres 18 | pass |
+| End-to-end API scenario | task → auto-triage → run → plan → execute (mock agent + gateway) → scan gates → same-agent deny 403 → review → merge approval → `MERGED`; `git log` shows the merged commit |
+| UI scenario | logged in, opened `/dashboard/factory`, opened a merged run detail, full-page screenshots verified |
+
+Unit tests cover: policy priority/specificity/conditions/glob/overlap; triage
+missing AC, agent-ready, duplicates; patch traversal/git/protected paths; plan
+validation; state transitions; branch naming.
+
+## Architectural decisions
+
+1. **Rust remains the analysis engine.** No competing policy/workflow logic was
+   added to `td-rules`; action governance is deterministic TypeScript evaluated
+   at API boundaries.
+2. **No second workflow engine.** NestJS owns orchestration because it already
+   owns persistence, events, tenancy and audit.
+3. **No fake quality evidence.** A scan with `analyzed_files == 0` blocks.
+4. **No agent code execution.** The platform commits validated full file
+   contents; it never runs generated code.
+5. **Idempotency and traceability are first-class.** Every run has a
+   correlation id; client idempotency keys return the existing run.
+6. **AI is advisory.** AI enriches classification/plans only; the model never
+   grants autonomy, never approves, and never changes policy.
+7. **Automation proposals are advisory.** User approval records intent; nothing
+   is activated without an explicit workflow definition.
+
+## Outstanding gaps / risks
+
+| Gap | Impact | Next step |
+|---|---|---|
+| No isolated execution sandbox | Agents cannot run builds/tests; patch-only execution | Add a per-run container/worktree runner with no host credentials |
+| No real test/coverage gate | Delivery can pass without executed tests | Replace simulated pipeline runner or add a dedicated test runner; gate on real exit codes/artifacts |
+| Pipelines are still simulated (pre-existing) | Cannot be used as CI evidence | Implement real step execution or integrate an external CI provider |
+| No pull-request model | Branch/commit trace only, no review thread | Add PR entity or provider adapter (GitHub/GitLab) |
+| AI review agent not dispatched | Only human review; same-agent denial enforced | Add REVIEWER profile dispatch and compare it to the execution run |
+| No deployment/monitoring/rollback | Factory stops at merge | Add environment/pipeline adapters and approval-gated deploy |
+| No cost/token accounting per run | Profile budgets are declared, not enforced | Capture provider usage and enforce per-org/run caps |
+| Automation proposals are not executable workflows | Discovery only | Add a workflow definition/trigger engine and activate approved proposals explicitly |
+| No cross-project impact analysis / knowledge store | Agents re-read context each run | Add project knowledge documents and dependency mapping |
+| No secret/dependency scanning beyond Rust rules | Security gate is static-only | Add secret detection and dependency audit with recorded evidence |
+| Multi-tenant test coverage not added | Tenant isolation relies on existing `organizationId` guards | Add API tests for cross-tenant 403/404 on new endpoints |
+| UI page is large (single file) | Maintainability | Extract plan/gates/automation panels into components after the surface stabilizes |
+
+## Next steps (ordered)
+
+1. Add a per-run worktree/container runner that executes the plan's test
+   commands and records signed artifacts; add a `tests` gate.
+2. Add pull-request entity and provider adapters; attach diff, checks and review
+   threads.
+3. Add tenant-isolation and authorization tests for every new endpoint.
+4. Add real CI pipeline execution (or external provider integration) and a
+   deployment gate.
+5. Add cost/token metering and per-run budget enforcement.
+6. Add project knowledge documents and cross-repository dependency analysis.
+7. Add secret and dependency scanning evidence to the security gate.
+8. Extract dashboard panels and add an approvals queue view.

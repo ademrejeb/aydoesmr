@@ -1,8 +1,9 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common"
+import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common"
 import { EventEmitter2 } from "@nestjs/event-emitter"
 import { randomUUID } from "crypto"
 import { PrismaService } from "../../prisma/prisma.service"
 import { NotificationsService } from "../notifications/notifications.service"
+import { PoliciesService } from "../policies/policies.service"
 import { NotificationType, RunStatus } from "@prisma/client"
 import { CreatePipelineDto, TriggerRunDto, UpdatePipelineDto } from "./dto"
 
@@ -32,7 +33,8 @@ export class PipelinesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly policies: PoliciesService
   ) {
     this.events.on("git.push", (payload: { organizationId: string; repositoryId: string }) => {
       void this.runPushTriggered(payload.organizationId, payload.repositoryId)
@@ -153,12 +155,31 @@ export class PipelinesService {
     })
     if (!pipeline) throw new NotFoundException("Pipeline not found or disabled")
 
+    const branch = dto.branch ?? pipeline.branch ?? "main"
+    const policy = await this.policies.check(
+      organizationId,
+      {
+        subject: "pipeline.run",
+        action: "run",
+        repositoryId: pipeline.repositoryId,
+        context: { pipeline: { id: pipeline.id, name: pipeline.name }, branch, environment: branch === "production" ? "production" : "development" },
+      },
+      userId
+    )
+    if (!policy.allowed || policy.requiresApproval) {
+      throw new ForbiddenException(
+        policy.allowed
+          ? `Pipeline run requires approval: ${policy.reasons.join("; ")}`
+          : `Pipeline run denied by policy: ${policy.reasons.join("; ")}`
+      )
+    }
+
     const run = await this.prisma.pipelineRun.create({
       data: {
         organizationId,
         pipelineId,
         trigger: "manual",
-        branch: dto.branch ?? pipeline.branch ?? "main",
+        branch,
         commitSha: pipeline.repository.lastCommitSha,
         steps: (pipeline.steps as { id: string; name: string; command: string }[]).map((s) => ({
           ...s,

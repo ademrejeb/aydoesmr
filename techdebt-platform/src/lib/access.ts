@@ -146,6 +146,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: "servers", cap: "view" },
       { key: "ai", cap: "ai_use" },
       { key: "agent_factory", cap: "ai_use" },
+      { key: "factory", cap: "ai_use" },
     ],
   },
   {

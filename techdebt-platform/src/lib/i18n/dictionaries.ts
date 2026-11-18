@@ -227,6 +227,7 @@ export interface Dictionary {
     dev_rules: string
     issues: string
     agent_factory: string
+    factory: string
     notifications: string
     no_notifications: string
     admin: string
@@ -1612,6 +1613,7 @@ export const dictionaries: Record<Locale, Dictionary> = {
       dev_rules: "قواعد التحليل",
       issues: "المشاكل",
       agent_factory: "وكلاء الذكاء",
+      factory: "مصنع البرمجيات",
       notifications: "الإشعارات",
       no_notifications: "لا توجد إشعارات",
       admin: "الإدارة",
@@ -2920,6 +2922,7 @@ export const dictionaries: Record<Locale, Dictionary> = {
       dev_rules: "Analysis Rules",
       issues: "Issues",
       agent_factory: "AI Agents",
+      factory: "Software Factory",
       notifications: "Notifications",
       no_notifications: "No notifications",
 admin: "Administration",
@@ -4228,6 +4231,7 @@ admin: "Administration",
       dev_rules: "Règles d'Analyse",
       issues: "Problèmes",
       agent_factory: "Agents IA",
+      factory: "Usine logicielle",
       notifications: "Notifications",
       no_notifications: "Aucune notification",
 admin: "Administration",
