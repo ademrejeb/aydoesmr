@@ -61,7 +61,8 @@ Migrations:
 - `20261118130000_automation_proposals`
 
 Both applied cleanly to a fresh PostgreSQL 18 database with `prisma migrate deploy`.
-No existing table or column was altered or dropped.
+No existing table or column was altered or dropped. New files follow the
+repository's LF convention.
 
 ## API additions
 
