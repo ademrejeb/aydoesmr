@@ -198,8 +198,8 @@ export async function commitFileInBare(opts: {
     await runGitGet(["-C", work, "add", "--", path])
     await runGitGet(["-C", work, "-c", `user.name=${authorName}`, "-c", `user.email=${authorEmail}`, "commit", "-m", message])
     await runGitGet(["-C", work, "push", bareDir, `HEAD:refs/heads/${branch}`])
-    const commits = await listCommits(bareDir, 1)
-    return commits[0] ?? { sha: "", author: authorName, email: authorEmail, date: new Date().toISOString(), message }
+    const sha = (await runGitGet(["-C", bareDir, "rev-parse", `refs/heads/${branch}`])).toString("utf8").trim()
+    return { sha, author: authorName, email: authorEmail, date: new Date().toISOString(), message }
   } finally {
     await fs.rm(tmp, { recursive: true, force: true }).catch(() => undefined)
   }
@@ -262,8 +262,8 @@ export async function commitFilesInBare(input: CommitFilesInput): Promise<Commit
       message,
     ])
     await runGitGet(["-C", work, "push", bareDir, `HEAD:refs/heads/${branch}`])
-    const commits = await listCommits(bareDir, 1)
-    return commits[0] ?? { sha: "", author: authorName, email: authorEmail, date: new Date().toISOString(), message }
+    const sha = (await runGitGet(["-C", bareDir, "rev-parse", `refs/heads/${branch}`])).toString("utf8").trim()
+    return { sha, author: authorName, email: authorEmail, date: new Date().toISOString(), message }
   } finally {
     await fs.rm(tmp, { recursive: true, force: true }).catch(() => undefined)
   }

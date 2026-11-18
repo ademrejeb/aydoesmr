@@ -810,8 +810,24 @@ export class FactoryService {
       data: { agentProfileId: profile.id, connectionId: connection.id, startedAt: new Date() },
     })
 
+    const taskContext = {
+      id: run.task.id,
+      title: run.task.title,
+      description: run.task.description,
+      type: run.task.type,
+      priority: run.task.priority,
+    }
+    const message = [
+      `Implement this issue and return full file contents as JSON with a "files" array.`,
+      `Issue: ${run.task.title}`,
+      `Description: ${run.task.description ?? ""}`,
+      `Plan: ${plan.summary ?? ""}`,
+      `Acceptance criteria: ${JSON.stringify(plan.acceptanceCriteria ?? [])}`,
+      `Task context: ${JSON.stringify(taskContext)}`,
+    ].join("\n")
     const input = {
       protocol: "techverse.factory.v1",
+      message,
       runId,
       correlationId: run.correlationId,
       task: {
@@ -1275,15 +1291,36 @@ export class FactoryService {
       deletions: 0,
     }))
     const plan = run.plans[0]
+    const changes: { path: string; status: string; additions: number; deletions: number; content?: string }[] = []
+    let contentBudget = 150_000
+    for (const entry of diff.entries.slice(0, 100)) {
+      const content = await showBlob(repo.storagePath, run.branch, entry.path).catch(() => null)
+      const include = content !== null && content.length <= 50_000 && contentBudget >= content.length
+      if (include) contentBudget -= content.length
+      changes.push({ ...entry, ...(include ? { content } : {}) })
+    }
+    const message = [
+      "Protocol: techverse.factory.review.v1",
+      `Review the change for task: ${run.task.title}`,
+      `Description: ${run.task.description ?? ""}`,
+      `Acceptance criteria: ${JSON.stringify(plan?.acceptanceCriteria ?? [])}`,
+      `Plan: ${plan?.summary ?? ""}`,
+      `Diff stats: +${diff.additions} -${diff.deletions} across ${diff.entries.length} file(s)`,
+      ...changes.map((change) => [
+        `--- ${change.path} (${change.status}, +${change.additions} -${change.deletions})`,
+        change.content ?? "(content omitted: unavailable or over size budget)",
+      ].join("\n")),
+    ].join("\n\n")
     const input = {
       protocol: "techverse.factory.review.v1",
+      message,
       runId,
       correlationId: run.correlationId,
       task: { id: run.task.id, title: run.task.title, description: run.task.description },
       plan: plan
         ? { summary: plan.summary, acceptanceCriteria: plan.acceptanceCriteria, steps: plan.steps, risks: plan.risks }
         : null,
-      diff,
+      diff: { ...diff, changes },
       outputContract: { decision: "APPROVED|REJECTED", findings: ["string"], summary: "optional string" },
       safety: {
         untrusted: ["task description", "diff", "plan"],
@@ -1309,22 +1346,41 @@ export class FactoryService {
       throw new BadRequestException(`Reviewer agent failed: ${agentRun.error ?? "unknown error"}`)
     }
     const output = agentRun.output as Record<string, unknown> | null
-    const root = output && typeof output === "object" ? output : {}
-    const nested = root.output && typeof root.output === "object" ? (root.output as Record<string, unknown>) : root
-    const decision = nested.decision === "APPROVED" || nested.decision === "REJECTED"
-      ? nested.decision
-      : root.decision === "APPROVED" || root.decision === "REJECTED"
-        ? root.decision
-        : null
-    if (!decision) throw new BadRequestException("Reviewer agent did not return a valid decision")
-    const findings = Array.isArray(nested.findings)
-      ? nested.findings.filter((entry): entry is string => typeof entry === "string").slice(0, 100)
+    const candidates: Record<string, unknown>[] = []
+    const collect = (value: unknown) => {
+      if (typeof value === "string") {
+        try {
+          const parsed: unknown = JSON.parse(value)
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) candidates.push(parsed as Record<string, unknown>)
+        } catch {
+          // Plain text is not a review payload.
+        }
+        return
+      }
+      if (value && typeof value === "object" && !Array.isArray(value)) candidates.push(value as Record<string, unknown>)
+    }
+    collect(output)
+    if (output && typeof output === "object") {
+      collect(output.output)
+      collect(output.message)
+      collect(output.value)
+      const nestedOutput = output.output
+      if (nestedOutput && typeof nestedOutput === "object" && !Array.isArray(nestedOutput)) {
+        collect((nestedOutput as Record<string, unknown>).message)
+        collect((nestedOutput as Record<string, unknown>).value)
+      }
+    }
+    const reviewed = candidates.find((candidate) => candidate.decision === "APPROVED" || candidate.decision === "REJECTED")
+    if (!reviewed) throw new BadRequestException("Reviewer agent did not return a valid decision")
+    const decision = reviewed.decision as "APPROVED" | "REJECTED"
+    const findings = Array.isArray(reviewed.findings)
+      ? reviewed.findings.filter((entry): entry is string => typeof entry === "string").slice(0, 100)
       : []
     return this.review(organizationId, userId, runId, {
       decision,
       findings,
       reviewerAgentRunId: agentRun.id,
-      reason: typeof nested.summary === "string" ? nested.summary.slice(0, 2000) : "AI reviewer decision",
+      reason: typeof reviewed.summary === "string" ? reviewed.summary.slice(0, 2000) : "AI reviewer decision",
     })
   }
 

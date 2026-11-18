@@ -532,8 +532,22 @@ export function validatePatch(raw: unknown): PatchValidation {
 
 /** Extract the file list an agent returned, without trusting any other field. */
 export function parseAgentPatch(output: unknown): PatchFile[] {
+  if (typeof output === "string") {
+    try {
+      const parsed = JSON.parse(output) as unknown
+      return parsed === output ? [] : parseAgentPatch(parsed)
+    } catch {
+      return []
+    }
+  }
   if (!output || typeof output !== "object") return []
   const root = output as Record<string, unknown>
+  // Provider gateways commonly return the model text in `message`; a coding
+  // agent is expected to return the file contract as JSON inside that text.
+  if (typeof root.message === "string") {
+    const nested = parseAgentPatch(root.message)
+    if (nested.length > 0) return nested
+  }
   const candidates = [root.files, root.changes, root.patch]
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) return candidate as PatchFile[]
