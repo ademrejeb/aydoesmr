@@ -27,6 +27,12 @@ Branch: `main` (working tree)
 | Approval queue | `GET /factory/approvals` and dashboard queue with inline approve/reject |
 | Tenant path/header binding | `OrgGuard` now rejects a route `:id` that differs from `X-Organization-Id`; cross-tenant smoke test passes |
 | Tenant isolation tests | `npm run test:tenant` covers cross-tenant reads/writes and member-vs-manager boundaries |
+| Isolated command runner | Docker (networkless, CPU/memory-limited) preferred; local fallback only with `FACTORY_ALLOW_LOCAL_EXEC=true`; allowlisted binaries, no shell operators, temp worktree, timeout/output caps |
+| Real `tests` gate | `npm test` executed against the factory branch; pass/fail/blocked evidence stored in `FactoryCommandRun`; no command = `SKIPPED` (never fake PASSED) |
+| Cost accounting | `FactoryCostEvent` for triage/plan/agent, token totals and optional USD estimate; per-run AI budget and agent budget enforcement |
+| Project knowledge | Versioned `ProjectKnowledge`; CRUD endpoints; relevant entries selected by keyword overlap and attached to plans/AI prompts |
+| Cross-repo impact | Static dependency overlap across hosted `package.json` manifests; returns shared dependencies and risk |
+| Dependency audit gate | Optional `auditCommand` runs through the same isolated runner and creates `dependency_audit` gate |
 | Independent review + same-agent denial | `factory.review` deny rule returned HTTP 403 for the execution agent run |
 | Human merge approval | `factory.merge` returned `WAITING_APPROVAL`; approval produced `MERGED` |
 | Append-only run trace + audit log | `FactoryEvent`, `AuditLog`; event sequence verified |
@@ -45,7 +51,7 @@ Branch: `main` (working tree)
 | `services/api/src/modules/pipelines/pipelines.module.ts` | Import policies |
 | `services/api/src/modules/tasks/tasks.service.ts` | Emit `task.created` |
 | `services/api/src/modules/git/git.service.ts` | `scanHosted` accepts a branch |
-| `services/api/src/modules/git/git-host.ts` | `commitFilesInBare`, `mergeFastForward`, `diffBetween` |
+| `services/api/src/modules/git/git-host.ts` | `commitFilesInBare`, `mergeFastForward`, `diffBetween`, `showBlob` |
 | `services/api/src/common/guards/org.guard.ts` | Enforce route `:id` equals tenant header |
 | `services/api/src/common/interfaces/authenticated-request.interface.ts` | Add `params` to the typed request |
 | `techdebt-platform/src/lib/api.ts` | Factory/policy types and calls |
@@ -60,6 +66,7 @@ Branch: `main` (working tree)
 - `AgentProfile`, `FactoryIssueProfile`, `FactoryRun`, `FactoryPlan`,
   `FactoryEvent`, `FactoryApproval`, `FactoryQualityGate`
 - `FactoryPullRequest`
+- `FactoryCommandRun`, `FactoryCostEvent`, `ProjectKnowledge`
 - `AutomationProposal`
 - Enums: `PolicyEffect`, `FactoryRunStatus`, `FactoryApprovalStatus`,
   `FactoryGateStatus`
@@ -68,6 +75,7 @@ Migrations:
 - `20261118120000_software_factory`
 - `20261118130000_automation_proposals`
 - `20261118140000_factory_pull_requests`
+- `20261118150000_factory_runner_cost_knowledge`
 
 Both applied cleanly to a fresh PostgreSQL 18 database with `prisma migrate deploy`.
 No existing table or column was altered or dropped. New files follow the
@@ -101,6 +109,13 @@ GET    /organizations/:id/factory/stats
 GET    /organizations/:id/factory/approvals
 GET    /organizations/:id/factory/pull-requests
 GET    /organizations/:id/factory/runs/:runId/pull-request
+GET    /organizations/:id/factory/projects/:projectId/config
+PUT    /organizations/:id/factory/projects/:projectId/config
+GET    /organizations/:id/factory/knowledge
+POST   /organizations/:id/factory/knowledge
+PATCH  /organizations/:id/factory/knowledge/:knowledgeId
+DELETE /organizations/:id/factory/knowledge/:knowledgeId
+GET    /organizations/:id/factory/impact
 GET    /organizations/:id/factory/automation
 POST   /organizations/:id/factory/automation/:proposalId/decision
 GET    /organizations/:id/factory/issues/:taskId/profile
@@ -111,7 +126,7 @@ POST   /organizations/:id/factory/issues/:taskId/classify
 
 | Command | Result |
 |---|---|
-| `cd services/api && npm test` | 14 tests, 14 pass, 0 fail |
+| `cd services/api && npm test` | 16 tests, 16 pass, 0 fail |
 | `npx tsc --noEmit` (API) | pass |
 | `npm run build` (API) | pass |
 | `npx tsc --noEmit` (dashboard) | pass |
@@ -121,11 +136,15 @@ POST   /organizations/:id/factory/issues/:taskId/classify
 | End-to-end API scenario | task → auto-triage → run → plan → execute (mock agent + gateway) → secret/scan gates → PR with diff stats → same-agent deny 403 → review → merge approval → `MERGED`; PR became `MERGED`; `git log` shows the merged commit |
 | Secret-gate scenario | agent output with an AWS key → `secret_scan FAILED`, run `FAILED`, no branch and no file created |
 | Tenant isolation | `npm run test:tenant` → PASS (cross-tenant 403 for runs/projects/policies/approvals/agents; member cannot manage agents or policies) |
+| Runner scenario | `npm test` executed in a temp worktree → `tests PASSED`, exit 0, output captured; mock agent reported 150 tokens and a USD cost |
+| Knowledge/impact scenario | Knowledge entry selected into `plan.knowledgeRefs`; cross-repo impact returned a shared `typescript` dependency |
+| Runner unavailable | Without Docker and without local opt-in, `tests` becomes `BLOCKED`; no false pass |
 | UI scenario | logged in, opened `/dashboard/factory`, opened a merged run detail, full-page screenshots verified |
 
 Unit tests cover: policy priority/specificity/conditions/glob/overlap; triage
-missing AC, agent-ready, duplicates; patch traversal/git/protected paths; plan
-validation; state transitions; branch naming.
+missing AC, agent-ready, duplicates; patch traversal/git/protected paths; secret
+detection; command allowlist/shell-operator rejection; plan validation; state
+transitions; branch naming.
 
 ## Architectural decisions
 
@@ -148,27 +167,26 @@ validation; state transitions; branch naming.
 
 | Gap | Impact | Next step |
 |---|---|---|
-| No isolated execution sandbox | Agents cannot run builds/tests; patch-only execution; no `tests` gate | Add a per-run container/worktree runner with no host credentials |
-| No real test/coverage gate | Delivery can pass without executed tests | Replace simulated pipeline runner or add a dedicated test runner; gate on real exit codes/artifacts |
+| Docker path untested here | Local fallback verified; Docker daemon was unavailable in this environment | Run the runner suite on a Docker host and assert `--network none` behavior |
+| No install step before tests | A repo without committed dependencies may fail the test command in Docker | Add an explicit install command (network policy decided per project) |
+| Dependency audit is opt-in | Only runs when `auditCommand` is configured | Add a default OSV/npm-audit adapter with evidence |
+| No coverage measurement | Tests execute, but coverage is not collected | Add coverage command/parser and a coverage threshold gate |
 | Pipelines are still simulated (pre-existing) | Cannot be used as CI evidence | Implement real step execution or integrate an external CI provider |
 | PR is internal only | No GitHub/GitLab push/sync or threaded comments | Add provider adapters on top of `FactoryPullRequest` |
 | AI review agent not dispatched | Only human review; same-agent denial enforced | Add REVIEWER profile dispatch and compare it to the execution run |
 | No deployment/monitoring/rollback | Factory stops at merge | Add environment/pipeline adapters and approval-gated deploy |
-| No cost/token accounting per run | Profile budgets are declared, not enforced | Capture provider usage and enforce per-org/run caps |
 | Automation proposals are not executable workflows | Discovery only | Add a workflow definition/trigger engine and activate approved proposals explicitly |
-| No cross-project impact analysis / knowledge store | Agents re-read context each run | Add project knowledge documents and dependency mapping |
-| No dependency vulnerability audit | Secret scan is real; dependencies are not checked | Add `npm audit`/OSV evidence in an isolated runner |
-| Multi-tenant test coverage not added | Tenant isolation relies on existing `organizationId` guards | Add API tests for cross-tenant 403/404 on new endpoints |
 | UI page is large (single file) | Maintainability | Extract plan/gates/automation panels into components after the surface stabilizes |
 
 ## Next steps (ordered)
 
-1. Add a per-run worktree/container runner that executes the plan's test
-   commands and records signed artifacts; add a `tests` gate.
+1. Add an install step plus Docker-host CI coverage for the runner.
 2. Add GitHub/GitLab adapters that mirror the internal PR and push checks.
 3. Add real CI pipeline execution (or external provider integration) and a
    deployment gate.
-4. Add cost/token metering and per-run budget enforcement.
-5. Add project knowledge documents and cross-repository dependency analysis.
-6. Add dependency vulnerability evidence alongside the secret scan.
-7. Extract dashboard panels and add a dedicated approvals page.
+4. Add coverage collection and a coverage threshold gate.
+5. Add a default dependency-audit adapter (OSV/npm audit).
+6. Add REVIEWER profile dispatch for AI review alongside human review.
+7. Add deployment orchestration, rollback and monitoring/self-healing.
+8. Activate approved automation proposals through a real workflow engine.
+9. Extract dashboard panels and add a dedicated approvals page.

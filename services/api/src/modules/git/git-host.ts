@@ -325,3 +325,14 @@ export async function diffBetween(bareDir: string, base: string, head: string): 
   }
   return { entries, additions, deletions }
 }
+
+/** Read a blob at a ref without checkout; returns null when the path is absent. */
+export async function showBlob(bareDir: string, rev: string, treePath: string): Promise<string | null> {
+  if (!/^[0-9A-Za-z._\/-]+$/.test(treePath)) return null
+  try {
+    const out = await runGitGet(["-C", bareDir, "show", `${rev}:${treePath}`])
+    return out.toString("utf8")
+  } catch {
+    return null
+  }
+}

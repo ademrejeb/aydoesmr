@@ -226,6 +226,9 @@ model Organization {
   policyRuleVersions   PolicyRuleVersion[]
   policyEvaluations    PolicyEvaluation[]
   automationProposals  AutomationProposal[]
+  factoryCommandRuns   FactoryCommandRun[]
+  factoryCostEvents    FactoryCostEvent[]
+  projectKnowledges    ProjectKnowledge[]
 
   @@index([slug])
 }
@@ -323,6 +326,7 @@ model Project {
   gitRepositories  GitRepository[]
   timesheetEntries TimesheetEntry[]
   factoryRuns      FactoryRun[]
+  knowledge        ProjectKnowledge[]
 
   @@index([organizationId])
   @@index([ownerId])
@@ -1516,6 +1520,17 @@ enum FactoryGateStatus {
   PASSED
   FAILED
   BLOCKED
+  SKIPPED
+}
+
+enum FactoryCommandStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  BLOCKED
+  TIMEOUT
+  CANCELLED
 }
 
 /// Configurable specialist agent. A profile points at an existing published
@@ -1617,6 +1632,8 @@ model FactoryRun {
   approvals    FactoryApproval[]
   gates        FactoryQualityGate[]
   pullRequest  FactoryPullRequest?
+  commandRuns  FactoryCommandRun[]
+  costEvents   FactoryCostEvent[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status, createdAt])
@@ -1636,6 +1653,7 @@ model FactoryPlan {
   acceptanceCriteria Json     @default("[]")
   risks              Json     @default("[]")
   outOfScope         Json     @default("[]")
+  knowledgeRefs      Json     @default("[]")
   approvalRequired   Boolean  @default(true)
   generatedBy        String   @default("heuristic") // heuristic | ai:<model>
   model              String?
@@ -1770,4 +1788,73 @@ model FactoryPullRequest {
   @@unique([repositoryId, number])
   @@index([organizationId, status, createdAt])
   @@index([runId])
+}
+
+/// One executed command (tests, build, lint, audit) for a factory run.
+model FactoryCommandRun {
+  id             String               @id @default(uuid())
+  organizationId String
+  runId          String
+  kind           String // TEST | BUILD | LINT | AUDIT
+  command        String
+  runner         String // docker | local
+  status         FactoryCommandStatus @default(QUEUED)
+  exitCode       Int?
+  output         String?
+  durationMs     Int?
+  error          String?
+  createdAt      DateTime             @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  run          FactoryRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([runId, kind, createdAt])
+}
+
+/// Token/cost accounting for AI and agent work. Cost is null when no rate is configured.
+model FactoryCostEvent {
+  id               String   @id @default(uuid())
+  organizationId   String
+  runId            String?
+  taskId           String?
+  kind             String // TRIAGE | PLAN | AGENT | TEST
+  provider         String?
+  model            String?
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  totalTokens      Int      @default(0)
+  estimatedCostUsd Float?
+  durationMs       Int?
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  run          FactoryRun?  @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([runId, createdAt])
+}
+
+/// Project-scoped engineering knowledge used by planning/triage. Versioned rows
+/// are appendable; the latest version wins in retrieval.
+model ProjectKnowledge {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String?
+  title          String
+  category       String   @default("architecture") // architecture | convention | testing | security | deployment | decision | other
+  content        String
+  source         String?
+  version        Int      @default(1)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, projectId, category])
 }

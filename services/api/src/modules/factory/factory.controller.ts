@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common"
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common"
 import { OrgRole } from "@prisma/client"
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { MinRole } from "../../common/decorators/roles.decorator"
@@ -9,18 +9,25 @@ import {
   ClassifyIssueDto,
   CreateAgentProfileDto,
   CreateFactoryRunDto,
+  CreateProjectKnowledgeDto,
   FactoryDecisionDto,
+  FactoryProjectConfigDto,
   FactoryReviewDto,
   GeneratePlanDto,
   UpdateAgentProfileDto,
+  UpdateProjectKnowledgeDto,
 } from "./dto"
 import { FactoryService } from "./factory.service"
+import { FactoryRunnerService } from "./factory-runner.service"
 
 @Controller("organizations/:id/factory")
 @UseGuards(OrgGuard)
 @MinRole(OrgRole.MEMBER)
 export class FactoryController {
-  constructor(private readonly factory: FactoryService) {}
+  constructor(
+    private readonly factory: FactoryService,
+    private readonly runner: FactoryRunnerService
+  ) {}
 
   // ------------------------------ agents ------------------------------ //
 
@@ -139,6 +146,61 @@ export class FactoryController {
   @Get("runs/:runId/pull-request")
   pullRequest(@Param("id") orgId: string, @Param("runId") runId: string) {
     return this.factory.getPullRequest(orgId, runId)
+  }
+
+  @Get("impact")
+  impact(@Param("id") orgId: string, @Query("projectId") projectId: string) {
+    return this.factory.impactAnalysis(orgId, projectId)
+  }
+
+  @Get("knowledge")
+  listKnowledge(@Param("id") orgId: string, @Query("projectId") projectId?: string) {
+    return this.factory.listKnowledge(orgId, projectId)
+  }
+
+  @Post("knowledge")
+  @MinRole(OrgRole.MANAGER)
+  createKnowledge(@Param("id") orgId: string, @CurrentUser() user: AuthUser, @Body() dto: CreateProjectKnowledgeDto) {
+    return this.factory.createKnowledge(orgId, user.id, dto)
+  }
+
+  @Patch("knowledge/:knowledgeId")
+  @MinRole(OrgRole.MANAGER)
+  updateKnowledge(
+    @Param("id") orgId: string,
+    @CurrentUser() user: AuthUser,
+    @Param("knowledgeId") knowledgeId: string,
+    @Body() dto: UpdateProjectKnowledgeDto
+  ) {
+    return this.factory.updateKnowledge(orgId, user.id, knowledgeId, dto)
+  }
+
+  @Delete("knowledge/:knowledgeId")
+  @MinRole(OrgRole.MANAGER)
+  deleteKnowledge(@Param("id") orgId: string, @CurrentUser() user: AuthUser, @Param("knowledgeId") knowledgeId: string) {
+    return this.factory.deleteKnowledge(orgId, user.id, knowledgeId)
+  }
+
+  @Get("projects/:projectId/config")
+  projectConfig(@Param("id") orgId: string, @Param("projectId") projectId: string) {
+    return this.runner.getProjectConfig(orgId, projectId)
+  }
+
+  @Put("projects/:projectId/config")
+  @MinRole(OrgRole.MANAGER)
+  setProjectConfig(
+    @Param("id") orgId: string,
+    @Param("projectId") projectId: string,
+    @Body() dto: FactoryProjectConfigDto
+  ) {
+    return this.runner.setProjectConfig(orgId, projectId, {
+      testCommand: dto.testCommand,
+      buildCommand: dto.buildCommand,
+      lintCommand: dto.lintCommand,
+      auditCommand: dto.auditCommand,
+      image: dto.image ?? undefined,
+      timeoutMs: dto.timeoutMs ?? undefined,
+    })
   }
 
   @Get("automation")

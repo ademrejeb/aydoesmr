@@ -16,7 +16,7 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react"
-import { api, type AgentConnection, type AgileTask, type AutomationProposal, type FactoryAgentProfile, type FactoryGateStatus, type FactoryPendingApproval, type FactoryRun, type FactoryRunSummary, type FactoryStats, type GitRepository, type Project } from "@/lib/api"
+import { api, type AgentConnection, type AgileTask, type AutomationProposal, type FactoryAgentProfile, type FactoryGateStatus, type FactoryPendingApproval, type FactoryRun, type FactoryRunSummary, type FactoryStats, type GitRepository, type Project, type ProjectKnowledge } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { useI18n } from "@/lib/i18n"
 import { useToast } from "@/lib/toast-context"
@@ -104,6 +104,19 @@ const COPY = {
     checks: "الفحوصات",
     securityFindings: "نتائج الأمان",
     reviewRun: "مراجعة",
+    testCommand: "أمر الاختبار",
+    testCommandHint: "مثال: npm test. يُشغّل في مستودع مؤقت؛ Docker أفضل، والتشغيل المحلي يتطلب FACTORY_ALLOW_LOCAL_EXEC=true.",
+    saveConfig: "حفظ",
+    cost: "التكلفة",
+    tokens: "توكن",
+    commands: "الأوامر",
+    noCommands: "لم يُشغّل أي أمر.",
+    knowledge: "معرفة المشروع",
+    addKnowledge: "إضافة معرفة",
+    knowledgeTitle: "العنوان",
+    knowledgeContent: "المحتوى",
+    category: "التصنيف",
+    noKnowledge: "لا توجد معرفة مسجلة.",
   },
   fr: {
     eyebrow: "Usine logicielle",
@@ -175,6 +188,19 @@ const COPY = {
     checks: "Contrôles",
     securityFindings: "Constats sécurité",
     reviewRun: "Examiner",
+    testCommand: "Test command",
+    testCommandHint: "Example: npm test. Runs in a temporary worktree; Docker is preferred, local execution requires FACTORY_ALLOW_LOCAL_EXEC=true.",
+    saveConfig: "Save",
+    cost: "Cost",
+    tokens: "tokens",
+    commands: "Commands",
+    noCommands: "No command executed.",
+    knowledge: "Project knowledge",
+    addKnowledge: "Add knowledge",
+    knowledgeTitle: "Title",
+    knowledgeContent: "Content",
+    category: "Category",
+    noKnowledge: "No knowledge recorded.",
   },
   en: {
     eyebrow: "Software factory",
@@ -246,6 +272,19 @@ const COPY = {
     checks: "Checks",
     securityFindings: "Security findings",
     reviewRun: "Review",
+    testCommand: "Test command",
+    testCommandHint: "Example: npm test. Runs in a temporary worktree; Docker is preferred, local execution requires FACTORY_ALLOW_LOCAL_EXEC=true.",
+    saveConfig: "Save",
+    cost: "Cost",
+    tokens: "tokens",
+    commands: "Commands",
+    noCommands: "No command executed.",
+    knowledge: "Project knowledge",
+    addKnowledge: "Add knowledge",
+    knowledgeTitle: "Title",
+    knowledgeContent: "Content",
+    category: "Category",
+    noKnowledge: "No knowledge recorded.",
   },
 } as const
 
@@ -306,6 +345,14 @@ export default function FactoryPage() {
   const [repos, setRepos] = useState<GitRepository[]>([])
   const [newRepo, setNewRepo] = useState("")
   const [newAgent, setNewAgent] = useState("")
+  const [testCommand, setTestCommand] = useState("")
+  const [configBusy, setConfigBusy] = useState(false)
+  const [knowledge, setKnowledge] = useState<ProjectKnowledge[]>([])
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false)
+  const [knowledgeProject, setKnowledgeProject] = useState("")
+  const [knowledgeTitle, setKnowledgeTitle] = useState("")
+  const [knowledgeContent, setKnowledgeContent] = useState("")
+  const [knowledgeCategory, setKnowledgeCategory] = useState("architecture")
 
   const [agentName, setAgentName] = useState("")
   const [agentSlug, setAgentSlug] = useState("")
@@ -320,7 +367,7 @@ export default function FactoryPage() {
       return
     }
     try {
-      const [r, s, p, c, pr, proposals, approvals] = await Promise.all([
+      const [r, s, p, c, pr, proposals, approvals, knowledgeRows] = await Promise.all([
         api.listFactoryRuns(token, currentOrg.id),
         api.factoryStats(token, currentOrg.id),
         api.listFactoryAgents(token, currentOrg.id),
@@ -328,6 +375,7 @@ export default function FactoryPage() {
         api.listProjects(token, currentOrg.id),
         api.factoryAutomation(token, currentOrg.id).catch(() => [] as AutomationProposal[]),
         api.factoryPendingApprovals(token, currentOrg.id).catch(() => [] as FactoryPendingApproval[]),
+        api.factoryKnowledge(token, currentOrg.id).catch(() => [] as ProjectKnowledge[]),
       ])
       setRuns(r)
       setStats(s)
@@ -336,6 +384,7 @@ export default function FactoryPage() {
       setProjects(pr)
       setProposals(proposals)
       setApprovalQueue(approvals)
+      setKnowledge(knowledgeRows)
     } catch {
       toast.error(c.failed)
     } finally {
@@ -356,9 +405,11 @@ export default function FactoryPage() {
     Promise.all([
       api.listTasks(token, currentOrg.id, newProject).catch(() => [] as AgileTask[]),
       api.gitListRepositories(token, currentOrg.id).catch(() => [] as GitRepository[]),
-    ]).then(([t, r]) => {
+      api.factoryProjectConfig(token, currentOrg.id, newProject).catch(() => null),
+    ]).then(([t, r, config]) => {
       setTasks(t)
       setRepos(r.filter((repo) => repo.project?.id === newProject || repo.projectId === newProject))
+      setTestCommand(config?.testCommand ?? "")
     })
   }, [token, currentOrg, newProject])
 
@@ -390,6 +441,19 @@ export default function FactoryPage() {
       toast.error(error instanceof Error ? error.message : c.failed)
     } finally {
       setBusy(null)
+    }
+  }
+
+  const saveTestCommand = async () => {
+    if (!token || !currentOrg || !newProject) return
+    setConfigBusy(true)
+    try {
+      await api.setFactoryProjectConfig(token, currentOrg.id, newProject, { testCommand: testCommand.trim() || null })
+      toast.success(c.saveConfig)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : c.failed)
+    } finally {
+      setConfigBusy(false)
     }
   }
 
@@ -436,6 +500,28 @@ export default function FactoryPage() {
       setAgentSlug("")
       setAgentConnection("")
       setAgentInstructions("")
+      await load()
+      toast.success(c.loaded)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : c.failed)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const createKnowledge = async () => {
+    if (!token || !currentOrg || !knowledgeTitle.trim() || !knowledgeContent.trim()) return
+    setBusy("knowledge")
+    try {
+      await api.createFactoryKnowledge(token, currentOrg.id, {
+        projectId: knowledgeProject || undefined,
+        title: knowledgeTitle.trim(),
+        content: knowledgeContent,
+        category: knowledgeCategory,
+      })
+      setKnowledgeOpen(false)
+      setKnowledgeTitle("")
+      setKnowledgeContent("")
       await load()
       toast.success(c.loaded)
     } catch (error) {
@@ -668,8 +754,54 @@ export default function FactoryPage() {
               </div>
             )}
           </div>
+          <div className="rounded-2xl border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="text-sm font-semibold">{c.knowledge}</h2>
+              {canManage && <Button size="sm" variant="outline" onClick={() => setKnowledgeOpen(true)}><Plus className="h-3.5 w-3.5" /> {c.addKnowledge}</Button>}
+            </div>
+            {knowledge.length === 0 ? (
+              <p className="px-5 py-5 text-sm text-muted-foreground">{c.noKnowledge}</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {knowledge.slice(0, 5).map((entry) => (
+                  <li key={entry.id} className="px-5 py-3">
+                    <p className="text-sm font-medium">{entry.title}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{entry.category} · v{entry.version}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </section>
       </div>
+
+      <Modal open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} title={c.addKnowledge} size="lg">
+        <div className="space-y-4">
+          <Field label={c.project}>
+            <Select value={knowledgeProject} onChange={(event) => setKnowledgeProject(event.target.value)}>
+              <option value="">Organization-wide</option>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </Select>
+          </Field>
+          <Field label={c.knowledgeTitle} required>
+            <Input value={knowledgeTitle} onChange={(event) => setKnowledgeTitle(event.target.value)} placeholder="Testing conventions" />
+          </Field>
+          <Field label={c.category}>
+            <Select value={knowledgeCategory} onChange={(event) => setKnowledgeCategory(event.target.value)}>
+              {["architecture", "convention", "testing", "security", "deployment", "decision", "other"].map((value) => <option key={value} value={value}>{value}</option>)}
+            </Select>
+          </Field>
+          <Field label={c.knowledgeContent} required>
+            <Textarea value={knowledgeContent} onChange={(event) => setKnowledgeContent(event.target.value)} rows={5} placeholder="Facts agents should reuse instead of rediscovering the repository." />
+          </Field>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setKnowledgeOpen(false)}>{c.close}</Button>
+          <Button onClick={createKnowledge} disabled={!knowledgeTitle.trim() || !knowledgeContent.trim() || busy === "knowledge"}>
+            {busy === "knowledge" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} {c.addKnowledge}
+          </Button>
+        </div>
+      </Modal>
 
       <Modal open={runOpen} onClose={() => setRunOpen(false)} title={c.newRun} description={c.subtitle} size="lg">
         <div className="space-y-4">
@@ -679,6 +811,14 @@ export default function FactoryPage() {
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </Select>
           </Field>
+          {newProject && (
+            <Field label={c.testCommand} hint={c.testCommandHint}>
+              <div className="flex gap-2">
+                <Input value={testCommand} onChange={(event) => setTestCommand(event.target.value)} placeholder="npm test" className="flex-1" />
+                <Button type="button" variant="outline" onClick={saveTestCommand} disabled={configBusy}>{c.saveConfig}</Button>
+              </div>
+            </Field>
+          )}
           <Field label={c.task}>
             <Select value={newTask} onChange={(event) => setNewTask(event.target.value)} disabled={!newProject}>
               <option value="">{c.selectTask}</option>
@@ -826,6 +966,14 @@ export default function FactoryPage() {
                     ))}
                   </ol>
                 </div>
+                {latestPlan.knowledgeRefs?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Knowledge</p>
+                    <ul className="mt-1 flex flex-wrap gap-1.5">
+                      {latestPlan.knowledgeRefs.map((ref) => <li key={ref.id}><Badge variant="outline">{ref.category}: {ref.title}</Badge></li>)}
+                    </ul>
+                  </div>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.acceptance}</p>
@@ -858,6 +1006,35 @@ export default function FactoryPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {(detail.commandRuns?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.commands}</p>
+                <div className="mt-2 space-y-2">
+                  {detail.commandRuns.map((command) => (
+                    <div key={command.id} className="rounded-lg border border-border p-2.5 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-mono text-xs">{command.kind} · {command.command}</p>
+                        <Badge variant={command.status === "PASSED" ? "success" : command.status === "BLOCKED" ? "danger" : command.status === "SKIPPED" ? "outline" : "warning"}>{command.status}</Badge>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{command.runner} · exit {command.exitCode ?? "?"} · {command.durationMs ?? 0}ms</p>
+                      {command.error && <p className="mt-1 text-xs text-danger">{command.error}</p>}
+                      {command.output && <pre className="mt-2 max-h-32 overflow-auto rounded bg-muted/40 p-2 text-[11px]">{command.output.slice(-4000)}</pre>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(detail.costEvents?.length ?? 0) > 0 && (
+              <div className="rounded-xl border border-border bg-muted/20 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.cost}</p>
+                <p className="mt-1 text-sm">{detail.costEvents.reduce((sum, event) => sum + event.totalTokens, 0)} {c.tokens}{detail.costEvents.some((event) => event.estimatedCostUsd != null) ? ` · $${detail.costEvents.reduce((sum, event) => sum + (event.estimatedCostUsd ?? 0), 0).toFixed(4)}` : ""}</p>
+                <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                  {detail.costEvents.map((event) => <span key={event.id}>{event.kind}: {event.totalTokens}</span>)}
                 </div>
               </div>
             )}

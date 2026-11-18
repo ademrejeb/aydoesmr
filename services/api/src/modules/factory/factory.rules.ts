@@ -48,6 +48,7 @@ export interface FactoryPlanDraft {
   acceptanceCriteria: string[]
   risks: string[]
   outOfScope: string[]
+  knowledgeRefs: { id: string; title: string; category: string }[]
   approvalRequired: boolean
   reasoning: string
   generatedBy: string
@@ -327,6 +328,7 @@ export function buildHeuristicPlan(input: {
   profile: IssueProfile
   files: { path: string; reason: string }[]
   repository: { name: string; defaultBranch: string } | null
+  knowledgeRefs?: { id: string; title: string; category: string }[]
 }): FactoryPlanDraft {
   const { task, project, profile, files, repository } = input
   const acceptance = extractAcceptanceCriteria(task.description)
@@ -362,6 +364,7 @@ export function buildHeuristicPlan(input: {
       "Changes to governance policies or CI secrets.",
       "Production deployment (handled by a separate approved workflow).",
     ],
+    knowledgeRefs: input.knowledgeRefs ?? [],
     approvalRequired: !profile.autonomous || profile.risk === "high",
     reasoning: `Heuristic plan from ${profile.classification.toLowerCase()} classification, complexity ${profile.complexity}, risk ${profile.risk}.`,
     generatedBy: "heuristic",
@@ -403,6 +406,7 @@ export function validatePlanDraft(raw: unknown): FactoryPlanDraft | null {
     acceptanceCriteria: strings(value.acceptanceCriteria, 20),
     risks: strings(value.risks, 20),
     outOfScope: strings(value.outOfScope, 20),
+    knowledgeRefs: [],
     approvalRequired: value.approvalRequired !== false,
     reasoning: typeof value.reasoning === "string" ? value.reasoning.slice(0, 4000) : "AI-generated plan.",
     generatedBy: "ai",

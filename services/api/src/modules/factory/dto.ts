@@ -234,3 +234,88 @@ export class AutomationDecisionDto {
   @MaxLength(2000)
   reason?: string
 }
+
+export class FactoryProjectConfigDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  testCommand?: string | null
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  buildCommand?: string | null
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  lintCommand?: string | null
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  auditCommand?: string | null
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  image?: string | null
+
+  @IsOptional()
+  @IsInt()
+  @Min(10_000)
+  @Max(1_800_000)
+  timeoutMs?: number | null
+}
+
+export class CreateProjectKnowledgeDto {
+  @IsOptional()
+  @IsString()
+  projectId?: string | null
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(200)
+  title!: string
+
+  @IsOptional()
+  @IsIn(["architecture", "convention", "testing", "security", "deployment", "decision", "other"])
+  category?: string
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(50_000)
+  content!: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  source?: string | null
+}
+
+export class UpdateProjectKnowledgeDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(200)
+  title?: string
+
+  @IsOptional()
+  @IsIn(["architecture", "convention", "testing", "security", "deployment", "decision", "other"])
+  category?: string
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(50_000)
+  content?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  source?: string | null
+
+  @IsOptional()
+  @IsString()
+  projectId?: string | null
+}

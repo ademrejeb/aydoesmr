@@ -841,6 +841,66 @@ export interface FactoryIssueProfile {
   updatedAt: string
 }
 
+export interface FactoryCommandRun {
+  id: string
+  kind: string
+  command: string
+  runner: "docker" | "local" | "blocked" | string
+  status: "QUEUED" | "RUNNING" | "PASSED" | "FAILED" | "BLOCKED" | "TIMEOUT" | "CANCELLED" | string
+  exitCode: number | null
+  output: string | null
+  durationMs: number | null
+  error: string | null
+  createdAt: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export interface FactoryCostEvent {
+  id: string
+  kind: string
+  provider: string | null
+  model: string | null
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  estimatedCostUsd: number | null
+  durationMs: number | null
+  createdAt: string
+}
+
+export interface FactoryProjectConfig {
+  testCommand: string | null
+  buildCommand: string | null
+  lintCommand: string | null
+  auditCommand: string | null
+  image: string
+  timeoutMs: number
+}
+
+export interface ProjectKnowledge {
+  id: string
+  projectId: string | null
+  title: string
+  category: string
+  content: string
+  source: string | null
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FactoryImpact {
+  project: { id: string; name: string }
+  targetRepositories: { id: string; name: string }[]
+  impacts: {
+    repository: { id: string; name: string }
+    project: { id: string; name: string } | null
+    sharedDependencies: string[]
+    risk: string
+  }[]
+}
+
 export interface FactoryPlan {
   id: string
   runId: string
@@ -853,6 +913,7 @@ export interface FactoryPlan {
   acceptanceCriteria: string[]
   risks: string[]
   outOfScope: string[]
+  knowledgeRefs: { id: string; title: string; category: string }[]
   approvalRequired: boolean
   generatedBy: string
   model: string | null
@@ -968,6 +1029,8 @@ export interface FactoryRun extends Omit<FactoryRunSummary, "plans" | "gates" | 
   gates: FactoryGate[]
   approvals: FactoryApproval[]
   events: FactoryEvent[]
+  commandRuns: FactoryCommandRun[]
+  costEvents: FactoryCostEvent[]
   issueProfile: FactoryIssueProfile | null
   pullRequest: FactoryPullRequest | null
 }
@@ -977,6 +1040,7 @@ export interface FactoryStats {
   gates: Record<string, number>
   activeProfiles: number
   pendingApprovals: number
+  cost: { totalTokens: number; estimatedCostUsd: number | null }
 }
 
 export interface AutomationProposal {
@@ -3404,6 +3468,50 @@ export const api = {
 
   factoryStats(token: string, orgId: string) {
     return request<FactoryStats>(`/organizations/${orgId}/factory/stats`, { token, orgId })
+  },
+
+  factoryProjectConfig(token: string, orgId: string, projectId: string) {
+    return request<FactoryProjectConfig>(`/organizations/${orgId}/factory/projects/${projectId}/config`, { token, orgId })
+  },
+
+  setFactoryProjectConfig(
+    token: string,
+    orgId: string,
+    projectId: string,
+    dto: Partial<FactoryProjectConfig>
+  ) {
+    return request<FactoryProjectConfig>(`/organizations/${orgId}/factory/projects/${projectId}/config`, {
+      method: "PUT",
+      body: dto,
+      token,
+      orgId,
+    })
+  },
+
+  factoryKnowledge(token: string, orgId: string, projectId?: string) {
+    const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""
+    return request<ProjectKnowledge[]>(`/organizations/${orgId}/factory/knowledge${q}`, { token, orgId })
+  },
+
+  createFactoryKnowledge(token: string, orgId: string, dto: { projectId?: string; title: string; category?: string; content: string; source?: string }) {
+    return request<ProjectKnowledge>(`/organizations/${orgId}/factory/knowledge`, {
+      method: "POST",
+      body: dto,
+      token,
+      orgId,
+    })
+  },
+
+  deleteFactoryKnowledge(token: string, orgId: string, knowledgeId: string) {
+    return request<{ ok: boolean }>(`/organizations/${orgId}/factory/knowledge/${knowledgeId}`, {
+      method: "DELETE",
+      token,
+      orgId,
+    })
+  },
+
+  factoryImpact(token: string, orgId: string, projectId: string) {
+    return request<FactoryImpact>(`/organizations/${orgId}/factory/impact?projectId=${encodeURIComponent(projectId)}`, { token, orgId })
   },
 
   factoryPendingApprovals(token: string, orgId: string) {

@@ -13,6 +13,7 @@ import {
   validatePlanDraft,
   type IssueTaskInput,
 } from "../src/modules/factory/factory.rules"
+import { allowedCommand, parseCommand } from "../src/modules/factory/factory.runner"
 
 function rule(partial: Partial<PolicyRuleLike> & Pick<PolicyRuleLike, "id" | "key" | "effect" | "subject">): PolicyRuleLike {
   return {
@@ -181,6 +182,20 @@ describe("patch safety", () => {
     assert.equal(validation.touchesProtectedPath, true)
     assert.ok(validation.protectedPaths.some((path) => path.includes("auth")))
     assert.equal(isProtectedPath("src/modules/tasks/tasks.service.ts"), false)
+  })
+})
+
+describe("command runner safety", () => {
+  it("parses quoted commands without a shell", () => {
+    assert.deepEqual(parseCommand('npm test -- --runInBand'), ["npm", "test", "--", "--runInBand"])
+    assert.deepEqual(parseCommand('node -e "process.exit(0)"'), ["node", "-e", "process.exit(0)"])
+  })
+
+  it("rejects shell operators and binaries outside the allowlist", () => {
+    assert.equal(allowedCommand("npm test && rm -rf /").ok, false)
+    assert.equal(allowedCommand("rm -rf /").ok, false)
+    assert.equal(allowedCommand("curl https://example.com").ok, false)
+    assert.equal(allowedCommand("npm test").ok, true)
   })
 })
 

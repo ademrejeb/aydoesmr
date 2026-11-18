@@ -193,12 +193,44 @@ Integrated boundaries: factory execute/patch/review/merge, `agent.run`
 | `repository_scan` | real `GitService.scanHosted` on the factory branch; Rust engine via gateway | `BLOCKED` if scan failed or `analyzed_files == 0`; `FAILED` on critical/high findings |
 | `independent_review` | human reviewer decision and findings | `FAILED` when rejected |
 | `secret_scan` | deterministic high-confidence patterns in the patch | `FAILED` before commit; no branch or file is created |
+| `tests` | `FactoryCommandRun` with the configured/detected test command | `PASSED` only on exit 0; `FAILED` on non-zero; `BLOCKED` without a runner; `SKIPPED` when no command exists |
+| `dependency_audit` | optional `auditCommand` through the runner | `FAILED` on non-zero; never inferred |
 
 Test execution is **not** claimed: the current pipeline runner is simulated, so
 the factory does not treat a pipeline result as test evidence. A real isolated
 runner is required before a `tests` gate can exist.
 
-## 9. Pull requests and approval queue
+## 9. Isolated command runner
+
+`FactoryRunnerService` materializes the factory branch in a temp worktree and
+runs configured or auto-detected commands (`npm test`, `cargo test`,
+`go test ./...`, `pytest -q`). Docker is preferred (`--network none`, 2 CPU,
+2 GB, no host credentials). The local fallback is opt-in
+(`FACTORY_ALLOW_LOCAL_EXEC=true`), uses a sanitized environment and an
+allowlisted binary; neither path uses a shell on POSIX. Windows resolves
+`npm`/`pnpm` through `cmd.exe` only in the local fallback.
+
+Evidence is persisted in `FactoryCommandRun` (command, runner, status, exit
+code, bounded output, duration) and surfaced as gates. No test command means
+`SKIPPED`, never `PASSED`.
+
+## 10. Cost and knowledge
+
+`FactoryCostEvent` records triage, planning and agent token usage; optional
+per-1K rates produce an estimated USD cost. A per-run AI budget
+(`FACTORY_MAX_AI_TOKENS_PER_RUN`) and the profile `budgetTokens` prevent a
+runaway run.
+
+`ProjectKnowledge` stores versioned architecture, convention, testing, security,
+deployment and decision notes. The planner selects up to five entries by
+keyword overlap and records `knowledgeRefs` on the plan. The AI prompt receives
+the selected content as untrusted data.
+
+`GET /factory/impact?projectId=` compares hosted `package.json` dependency
+names across repositories and returns shared dependencies with a risk level.
+This is dependency overlap, not a full cross-repository call graph.
+
+## 11. Pull requests and approval queue
 
 `FactoryPullRequest` is the review surface for a run. It is created after the
 patch commit and refreshed after gates and review. Diff stats and changed files
@@ -210,7 +242,7 @@ GitHub/GitLab sync is claimed.
 The dashboard exposes `GET /factory/approvals` as a queue with inline
 approve/reject for managers.
 
-## 10. Tenant isolation
+## 12. Tenant isolation
 
 `OrgGuard` binds the tenant twice: the `X-Organization-Id` header selects the
 membership, and the route's `:id` must match it. A mismatch is `403`, closing
@@ -218,7 +250,7 @@ the path/header split that would otherwise let a member of tenant B address
 tenant A's path. `npm run test:tenant` covers reads, writes, agent/policy
 management and member-vs-manager boundaries.
 
-## 11. Automation discovery
+## 13. Automation discovery
 
 `GET /factory/automation` groups the last 30 days of `AuditLog` by action and
 matches actionable templates (pipeline runs, AI actions, factory runs, triage,
@@ -230,11 +262,12 @@ complexity, risk, required permissions and a proposed workflow shape.
 workflow definition exists. This is deliberate: automation proposals are
 untrusted suggestions, never silent authority.
 
-## 12. What is intentionally not built yet
+## 14. What is intentionally not built yet
 
 - Containerized coding sandbox and arbitrary command execution.
-- Real CI test execution, coverage, dependency audit, SonarQube/Checkmarx.
+- Coverage/SonarQube/Checkmarx and a default dependency audit.
 - GitHub/GitLab pull-request sync (the internal PR model is real).
+- Deployment orchestration, rollback and monitoring/self-healing.
 - Deployment orchestration, rollback, monitoring/incident self-healing.
 - Visual workflow builder, schedules/queues/dead-letter.
 - Cross-repository impact analysis and project knowledge store.
