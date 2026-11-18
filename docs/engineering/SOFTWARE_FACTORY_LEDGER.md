@@ -191,3 +191,36 @@ transitions; branch naming.
 6. Add deployment orchestration, rollback and monitoring/self-healing.
 7. Activate approved automation proposals through a real workflow engine.
 8. Extract dashboard panels and add a dedicated approvals page.
+
+## Suite onboarding and integration verification (2026-11-18)
+
+Three application repositories were imported into TechVerse Studio and driven
+through the Factory end to end. Each project has an explicit test command and
+real test files committed to the hosted repository.
+
+| Project | Hosted repo | Test command | Result | Merged commit |
+|---|---|---|---|---|
+| FieldOps | `fieldops` | `node --test test/techverse-smoke.test.mjs` | PASSED (192 ms) | `9e09d8f` |
+| AI Agent Factory | `ai-agent-factory` | `python -m pytest -q services/api/tests/test_control_plane.py` | PASSED, 7 tests (7.9 s) | `fbf694b` |
+| Design System | `design-system-ui` | `node --test test/techverse-smoke.test.mjs` | PASSED (181 ms) | `e50d2c7` |
+
+The AI Agent Factory run proves the Python test path and `pytest` allowlist.
+FieldOps and Design System prove the Node test path. Every run completed
+`secret_scan`, `plan_completeness`, `repository_scan`, `tests` and
+`independent_review`, then `READY_TO_MERGE -> WAITING_APPROVAL -> MERGED`.
+
+A separate published hosted agent (`TechVerse Reviewer`) is wired through its
+own TechVerse connection and REVIEWER profile. The coding profile is rejected
+with HTTP 403 when it attempts to review its own run; the reviewer profile
+approves it.
+
+### Integration fixes found by these runs
+
+| Defect | Fix | Evidence |
+|---|---|---|
+| `commitFilesInBare` returned the default-branch head instead of the pushed branch head | Resolve `refs/heads/<branch>` after push | Second FieldOps run reported `9e09d8f`, matching `git rev-parse`; prior run reported the base import commit |
+| Hosted agent graphs require a `message` input | Include `message` in execution and review payloads | Factory run applied a real patch instead of failing validation |
+| Reviewer received only diff statistics | Attach changed file contents (150 KB total, 50 KB/file cap) to the review payload and message | Review gate PASSED with file content present |
+| Provider gateway nests review JSON under `message`/`output` strings | Parse nested object/JSON candidates before accepting a decision | Independent review returned `APPROVED` and moved the run to `READY_TO_MERGE` |
+
+Verification commit: `dffbd16 fix(factory): preserve commit SHA and reviewer payloads`.
