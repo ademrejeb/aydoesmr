@@ -126,6 +126,21 @@ export class FactoryController {
     return this.factory.stats(orgId)
   }
 
+  @Get("approvals")
+  pendingApprovals(@Param("id") orgId: string) {
+    return this.factory.pendingApprovals(orgId)
+  }
+
+  @Get("pull-requests")
+  pullRequests(@Param("id") orgId: string, @Query("status") status?: string) {
+    return this.factory.listPullRequests(orgId, status)
+  }
+
+  @Get("runs/:runId/pull-request")
+  pullRequest(@Param("id") orgId: string, @Param("runId") runId: string) {
+    return this.factory.getPullRequest(orgId, runId)
+  }
+
   @Get("automation")
   automation(@Param("id") orgId: string, @CurrentUser() user: AuthUser) {
     return this.factory.automationOpportunities(orgId, user.id)

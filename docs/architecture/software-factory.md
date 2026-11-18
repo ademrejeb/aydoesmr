@@ -192,12 +192,33 @@ Integrated boundaries: factory execute/patch/review/merge, `agent.run`
 | `plan_completeness` | plan exists with acceptance criteria | `FAILED` |
 | `repository_scan` | real `GitService.scanHosted` on the factory branch; Rust engine via gateway | `BLOCKED` if scan failed or `analyzed_files == 0`; `FAILED` on critical/high findings |
 | `independent_review` | human reviewer decision and findings | `FAILED` when rejected |
+| `secret_scan` | deterministic high-confidence patterns in the patch | `FAILED` before commit; no branch or file is created |
 
 Test execution is **not** claimed: the current pipeline runner is simulated, so
 the factory does not treat a pipeline result as test evidence. A real isolated
 runner is required before a `tests` gate can exist.
 
-## 9. Automation discovery
+## 9. Pull requests and approval queue
+
+`FactoryPullRequest` is the review surface for a run. It is created after the
+patch commit and refreshed after gates and review. Diff stats and changed files
+come from `git diff <target>..<factory-branch>`; checks come from persisted
+gates; findings come from the review evidence. `OPEN → MERGED` happens only on
+fast-forward merge; cancellation closes it. This is an internal PR — no
+GitHub/GitLab sync is claimed.
+
+The dashboard exposes `GET /factory/approvals` as a queue with inline
+approve/reject for managers.
+
+## 10. Tenant isolation
+
+`OrgGuard` binds the tenant twice: the `X-Organization-Id` header selects the
+membership, and the route's `:id` must match it. A mismatch is `403`, closing
+the path/header split that would otherwise let a member of tenant B address
+tenant A's path. `npm run test:tenant` covers reads, writes, agent/policy
+management and member-vs-manager boundaries.
+
+## 11. Automation discovery
 
 `GET /factory/automation` groups the last 30 days of `AuditLog` by action and
 matches actionable templates (pipeline runs, AI actions, factory runs, triage,
@@ -209,11 +230,11 @@ complexity, risk, required permissions and a proposed workflow shape.
 workflow definition exists. This is deliberate: automation proposals are
 untrusted suggestions, never silent authority.
 
-## 10. What is intentionally not built yet
+## 12. What is intentionally not built yet
 
 - Containerized coding sandbox and arbitrary command execution.
-- Real CI test execution, coverage, secret scanning, SonarQube/Checkmarx.
-- Pull-request objects (branch/commit trace exists; no PR table/UI).
+- Real CI test execution, coverage, dependency audit, SonarQube/Checkmarx.
+- GitHub/GitLab pull-request sync (the internal PR model is real).
 - Deployment orchestration, rollback, monitoring/incident self-healing.
 - Visual workflow builder, schedules/queues/dead-letter.
 - Cross-repository impact analysis and project knowledge store.

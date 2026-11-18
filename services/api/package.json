@@ -15,7 +15,8 @@
     "prisma:seed:service-desk": "ts-node prisma/seed-service-desk.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
-    "test": "node --test -r ts-node/register/transpile-only test/factory.rules.spec.ts"
+    "test": "node --test -r ts-node/register/transpile-only test/factory.rules.spec.ts",
+    "test:tenant": "node test/tenant-isolation.mjs"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

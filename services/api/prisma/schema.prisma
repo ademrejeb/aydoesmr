@@ -221,6 +221,7 @@ model Organization {
   factoryEvents        FactoryEvent[]
   factoryApprovals     FactoryApproval[]
   factoryQualityGates  FactoryQualityGate[]
+  factoryPullRequests  FactoryPullRequest[]
   policyRules          PolicyRule[]
   policyRuleVersions   PolicyRuleVersion[]
   policyEvaluations    PolicyEvaluation[]
@@ -792,10 +793,11 @@ model GitRepository {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  pipelines    Pipeline[]
-  factoryRuns  FactoryRun[]
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project             Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  pipelines           Pipeline[]
+  factoryRuns         FactoryRun[]
+  factoryPullRequests FactoryPullRequest[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1614,6 +1616,7 @@ model FactoryRun {
   events       FactoryEvent[]
   approvals    FactoryApproval[]
   gates        FactoryQualityGate[]
+  pullRequest  FactoryPullRequest?
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status, createdAt])
@@ -1733,4 +1736,38 @@ model AutomationProposal {
 
   @@unique([organizationId, fingerprint])
   @@index([organizationId, status, frequency])
+}
+
+/// Pull request metadata attached to a factory run. The branch/commit live on
+/// FactoryRun; this row is the review surface (diff stats, checks, findings).
+model FactoryPullRequest {
+  id               String    @id @default(uuid())
+  organizationId   String
+  runId            String    @unique
+  repositoryId     String
+  number           Int
+  title            String
+  body             String?
+  sourceBranch     String
+  targetBranch     String
+  status           String    @default("OPEN") // OPEN | MERGED | CLOSED
+  risk             String?
+  changedFiles     Json      @default("[]")
+  diffStats        Json      @default("{}")
+  commitShas       Json      @default("[]")
+  findings         Json      @default("[]")
+  securityFindings Json      @default("[]")
+  checks           Json      @default("[]")
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  mergedAt         DateTime?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  run          FactoryRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  repository   GitRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, number])
+  @@index([organizationId, status, createdAt])
+  @@index([runId])
 }

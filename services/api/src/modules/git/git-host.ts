@@ -281,3 +281,47 @@ export async function mergeFastForward(bareDir: string, source: string, target: 
   await runGitGet(["-C", bareDir, "update-ref", `refs/heads/${target}`, sourceSha])
   return sourceSha
 }
+
+export interface DiffEntry {
+  path: string
+  status: string
+  additions: number
+  deletions: number
+}
+
+/** Real numstat/name-status between two refs in a hosted bare repository. */
+export async function diffBetween(bareDir: string, base: string, head: string): Promise<{
+  entries: DiffEntry[]
+  additions: number
+  deletions: number
+}> {
+  const range = `${base}..${head}`
+  const numstat = (await runGitGet(["-C", bareDir, "diff", "--numstat", range])).toString("utf8")
+  const names = (await runGitGet(["-C", bareDir, "diff", "--name-status", range])).toString("utf8")
+  const nameByPath = new Map<string, string>()
+  for (const line of names.split("\n")) {
+    const [status, ...rest] = line.split("\t")
+    const path = rest.join("\t").trim()
+    if (path && status) nameByPath.set(path, status.slice(0, 1))
+  }
+  let additions = 0
+  let deletions = 0
+  const entries: DiffEntry[] = []
+  for (const line of numstat.split("\n")) {
+    const [add, del, path] = line.split("\t")
+    if (!path) continue
+    const addNum = Number(add)
+    const delNum = Number(del)
+    const safeAdd = Number.isFinite(addNum) ? addNum : 0
+    const safeDel = Number.isFinite(delNum) ? delNum : 0
+    additions += safeAdd
+    deletions += safeDel
+    entries.push({
+      path: path.trim(),
+      status: nameByPath.get(path.trim()) ?? "M",
+      additions: safeAdd,
+      deletions: safeDel,
+    })
+  }
+  return { entries, additions, deletions }
+}

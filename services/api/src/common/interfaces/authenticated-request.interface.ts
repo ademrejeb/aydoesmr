@@ -16,4 +16,5 @@ export interface AuthenticatedRequest {
   user?: AuthUser
   org?: OrgContext
   headers: Record<string, string | string[] | undefined>
+  params?: Record<string, string | undefined>
 }

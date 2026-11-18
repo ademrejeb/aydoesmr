@@ -21,7 +21,7 @@ import { EncryptionService } from "../ai/encryption.service"
 import { providerChat, type AiChatMessage, type AiProviderType } from "../ai/providers"
 import { AgentFactoryService } from "../agent-factory/agent-factory.service"
 import { GitService } from "../git/git.service"
-import { commitFilesInBare, listBranches, listTree, mergeFastForward } from "../git/git-host"
+import { commitFilesInBare, diffBetween, listBranches, listTree, mergeFastForward } from "../git/git-host"
 import {
   branchName,
   buildHeuristicPlan,
@@ -29,6 +29,7 @@ import {
   extractAcceptanceCriteria,
   hasAcceptanceCriteria,
   parseAgentPatch,
+  scanPatchForSecrets,
   triageIssue,
   validatePatch,
   validatePlanDraft,
@@ -53,6 +54,7 @@ const RUN_INCLUDE = {
   plans: { orderBy: { version: "desc" as const }, take: 1 },
   approvals: { orderBy: { createdAt: "desc" as const }, take: 20 },
   gates: { orderBy: { createdAt: "asc" as const } },
+  pullRequest: true,
   events: { orderBy: { createdAt: "asc" as const }, take: 250 },
 } satisfies Prisma.FactoryRunInclude
 
@@ -364,6 +366,7 @@ export class FactoryService {
         plans: { orderBy: { version: "desc" }, take: 1, select: { version: true, approvalRequired: true, generatedBy: true } },
         gates: { select: { name: true, status: true } },
         approvals: { where: { status: FactoryApprovalStatus.PENDING }, select: { id: true, stage: true } },
+        pullRequest: { select: { number: true, status: true } },
       },
     })
   }
@@ -887,6 +890,33 @@ export class FactoryService {
       await this.failRun(organizationId, runId, "BLOCKED", "The linked repository no longer exists.", userId)
       return
     }
+    const secrets = scanPatchForSecrets(files)
+    if (secrets.length > 0) {
+      await this.upsertGate(
+        organizationId,
+        runId,
+        "secret_scan",
+        FactoryGateStatus.FAILED,
+        `${secrets.length} potential secret(s) detected; the patch was not committed.`,
+        { findings: secrets }
+      )
+      await this.failRun(
+        organizationId,
+        runId,
+        "FAILED",
+        `Secret scan blocked the patch: ${secrets.map((finding) => `${finding.kind} at ${finding.path}:${finding.line}`).join("; ")}`,
+        userId
+      )
+      return
+    }
+    await this.upsertGate(
+      organizationId,
+      runId,
+      "secret_scan",
+      FactoryGateStatus.PASSED,
+      "No high-confidence secrets detected in the patch.",
+      { files: files.length, findings: 0 }
+    )
     const branches = await listBranches(repo.storagePath).catch(() => [])
     const branch = run.branch ?? branchName({
       projectKey: run.project.key,
@@ -923,6 +953,7 @@ export class FactoryService {
         files: files.length,
         agentRunId,
       }, userId)
+      await this.syncPullRequest(organizationId, runId, userId)
       await this.transition(runId, organizationId, FactoryRunStatus.QUALITY_CHECK, "QUALITY", {})
       await this.runQualityGates(organizationId, userId, runId)
     } catch (error) {
@@ -994,6 +1025,7 @@ export class FactoryService {
     }
 
     await this.upsertGate(organizationId, runId, "independent_review", FactoryGateStatus.PENDING, "Waiting for an independent review.", {})
+    await this.syncPullRequest(organizationId, runId, userId)
     await this.transition(runId, organizationId, FactoryRunStatus.WAITING_REVIEW, "REVIEW", { scanId: scan?.id ?? null })
   }
 
@@ -1038,6 +1070,7 @@ export class FactoryService {
     const nextMetadata = this.mergeMetadata(run.metadata, { review: { reviewerId: userId, findings, at: new Date().toISOString() } })
     await this.prisma.factoryRun.update({ where: { id: runId }, data: { metadata: nextMetadata as Prisma.InputJsonValue } })
     await this.appendEvent(organizationId, runId, "factory.review.completed", { decision: "APPROVED", findings }, userId)
+    await this.syncPullRequest(organizationId, runId, userId)
 
     const gates = await this.prisma.factoryQualityGate.findMany({ where: { runId } })
     const allPassed = gates.length > 0 && gates.every((gate) => gate.status === FactoryGateStatus.PASSED)
@@ -1116,6 +1149,10 @@ export class FactoryService {
           metadata: metadata as Prisma.InputJsonValue,
         },
       })
+      await this.prisma.factoryPullRequest.updateMany({
+        where: { runId, organizationId },
+        data: { status: "MERGED", mergedAt: new Date() },
+      })
       await this.appendEvent(organizationId, runId, "factory.merged", { branch: run.branch, target: repo.defaultBranch, commitSha: sha }, userId)
       await this.git.refreshStats(repo.id).catch(() => undefined)
       await this.audit(organizationId, userId, "factory.merged", runId, { branch: run.branch, target: repo.defaultBranch })
@@ -1130,6 +1167,7 @@ export class FactoryService {
     if (run.status === FactoryRunStatus.MERGED || run.status === FactoryRunStatus.CANCELLED) {
       throw new BadRequestException("This run is already final")
     }
+    await this.prisma.factoryPullRequest.updateMany({ where: { runId, organizationId }, data: { status: "CLOSED" } })
     await this.transition(runId, organizationId, FactoryRunStatus.CANCELLED, "CANCEL", {})
     await this.appendEvent(organizationId, runId, "factory.cancelled", {}, userId)
     await this.audit(organizationId, userId, "factory.cancelled", runId, {})
@@ -1276,6 +1314,127 @@ export class FactoryService {
       `Automation proposal ${proposal.fingerprint} ${dto.decision.toLowerCase()} — activation still requires an explicit workflow definition`
     )
     return updated
+  }
+
+  async pendingApprovals(organizationId: string) {
+    return this.prisma.factoryApproval.findMany({
+      where: { organizationId, status: FactoryApprovalStatus.PENDING },
+      orderBy: { createdAt: "asc" },
+      take: 100,
+      include: {
+        run: {
+          select: {
+            id: true,
+            status: true,
+            stage: true,
+            branch: true,
+            task: { select: { id: true, title: true, priority: true } },
+            project: { select: { id: true, name: true } },
+            agentProfile: { select: { id: true, name: true, role: true } },
+            plans: { orderBy: { version: "desc" }, take: 1, select: { version: true, summary: true } },
+          },
+        },
+      },
+    })
+  }
+
+  async listPullRequests(organizationId: string, status?: string) {
+    return this.prisma.factoryPullRequest.findMany({
+      where: { organizationId, ...(status ? { status } : {}) },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: {
+        run: { select: { id: true, taskId: true, status: true } },
+        repository: { select: { id: true, name: true, defaultBranch: true } },
+      },
+    })
+  }
+
+  async getPullRequest(organizationId: string, runId: string) {
+    const pr = await this.prisma.factoryPullRequest.findFirst({ where: { organizationId, runId } })
+    if (!pr) throw new NotFoundException("Pull request not found for this run")
+    return pr
+  }
+
+  /**
+   * Materialize/refresh the review surface for a run. Diff stats and changed
+   * files come from `git diff` between the target and factory branches; checks
+   * and findings come from persisted gates and reviews. Nothing is inferred.
+   */
+  private async syncPullRequest(organizationId: string, runId: string, userId?: string | null) {
+    const run = await this.loadRun(organizationId, runId)
+    if (!run.repositoryId || !run.branch) return null
+    const repo = await this.prisma.gitRepository.findFirst({
+      where: { id: run.repositoryId, organizationId },
+      select: { id: true, storagePath: true, defaultBranch: true },
+    })
+    if (!repo) return null
+    const base = run.baseBranch ?? repo.defaultBranch
+    let diff: Awaited<ReturnType<typeof diffBetween>> = { entries: [], additions: 0, deletions: 0 }
+    try {
+      diff = await diffBetween(repo.storagePath, base, run.branch)
+    } catch (error) {
+      this.logger.warn(`Diff stats unavailable for run ${runId}: ${(error as Error).message}`)
+    }
+    const existing = await this.prisma.factoryPullRequest.findUnique({ where: { runId } })
+    const latest = await this.prisma.factoryPullRequest.aggregate({
+      where: { repositoryId: repo.id },
+      _max: { number: true },
+    })
+    const number = existing?.number ?? (latest._max.number ?? 0) + 1
+    const plan = run.plans[0]
+    const criteria = Array.isArray(plan?.acceptanceCriteria) ? (plan.acceptanceCriteria as unknown[]) : []
+    const profile = await this.prisma.factoryIssueProfile.findUnique({ where: { taskId: run.taskId } })
+    const checks = run.gates.map((gate) => ({ name: gate.name, status: gate.status, detail: gate.detail }))
+    const reviewEvidence = run.gates.find((gate) => gate.name === "independent_review")?.evidence
+    const findings = reviewEvidence && typeof reviewEvidence === "object" && "findings" in reviewEvidence
+      ? (reviewEvidence as { findings?: unknown }).findings ?? []
+      : []
+    const secretEvidence = run.gates.find((gate) => gate.name === "secret_scan")?.evidence
+    const securityFindings = secretEvidence && typeof secretEvidence === "object" && "findings" in secretEvidence
+      ? (secretEvidence as { findings?: unknown }).findings ?? []
+      : []
+    const body = [
+      plan?.summary ?? `Factory change for ${run.task.title}`,
+      "",
+      "## Acceptance criteria",
+      ...(criteria.length > 0 ? criteria.map((entry) => `- ${String(entry)}`) : ["- None recorded"]),
+      "",
+      "## Trace",
+      `- Run: ${run.id}`,
+      `- Correlation: ${run.correlationId}`,
+      `- Issue: ${run.taskId}`,
+      `- Agent: ${run.agentProfile?.name ?? "unassigned"}`,
+      `- Commit: ${run.commitSha ?? "pending"}`,
+      "",
+      "Generated by TechVerse Factory. A coding agent cannot approve its own change.",
+    ].join("\n")
+    const data = {
+      organizationId,
+      runId,
+      repositoryId: repo.id,
+      number,
+      title: run.task.title,
+      body,
+      sourceBranch: run.branch,
+      targetBranch: base,
+      status: existing?.status === "MERGED" ? "MERGED" : existing?.status === "CLOSED" ? "CLOSED" : "OPEN",
+      risk: profile?.risk ?? null,
+      changedFiles: (diff.entries.length > 0
+        ? diff.entries
+        : ((run.metadata as Record<string, unknown> | null)?.patchFiles as string[] | undefined ?? []).map((path) => ({ path, status: "M", additions: 0, deletions: 0 }))) as unknown as Prisma.InputJsonValue,
+      diffStats: diff as unknown as Prisma.InputJsonValue,
+      commitShas: (run.commitSha ? [run.commitSha] : []) as Prisma.InputJsonValue,
+      findings: findings as Prisma.InputJsonValue,
+      securityFindings: securityFindings as Prisma.InputJsonValue,
+      checks: checks as Prisma.InputJsonValue,
+      createdById: existing?.createdById ?? userId ?? null,
+    }
+    return this.prisma.factoryPullRequest.upsert({
+      where: { runId },
+      create: data,
+      update: data,
+    })
   }
 
   async stats(organizationId: string) {

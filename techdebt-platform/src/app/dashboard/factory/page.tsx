@@ -16,7 +16,7 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react"
-import { api, type AgentConnection, type AgileTask, type AutomationProposal, type FactoryAgentProfile, type FactoryGateStatus, type FactoryRun, type FactoryRunSummary, type FactoryStats, type GitRepository, type Project } from "@/lib/api"
+import { api, type AgentConnection, type AgileTask, type AutomationProposal, type FactoryAgentProfile, type FactoryGateStatus, type FactoryPendingApproval, type FactoryRun, type FactoryRunSummary, type FactoryStats, type GitRepository, type Project } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { useI18n } from "@/lib/i18n"
 import { useToast } from "@/lib/toast-context"
@@ -95,6 +95,15 @@ const COPY = {
     noAutomation: "لا توجد أنماط متكررة كافية بعد.",
     frequency: "مرات",
     minutesSaved: "دقيقة/شهر",
+    approvalQueue: "طلبات الموافقة",
+    noApprovals: "لا توجد موافقات معلقة.",
+    pullRequest: "طلب الدمج",
+    files: "الملفات",
+    additions: "إضافات",
+    deletions: "حذف",
+    checks: "الفحوصات",
+    securityFindings: "نتائج الأمان",
+    reviewRun: "مراجعة",
   },
   fr: {
     eyebrow: "Usine logicielle",
@@ -157,6 +166,15 @@ const COPY = {
     noAutomation: "Pas encore assez de motifs répétés.",
     frequency: "fois",
     minutesSaved: "min/mois",
+    approvalQueue: "File d’approbation",
+    noApprovals: "Aucune approbation en attente.",
+    pullRequest: "Pull request",
+    files: "Fichiers",
+    additions: "Ajouts",
+    deletions: "Suppressions",
+    checks: "Contrôles",
+    securityFindings: "Constats sécurité",
+    reviewRun: "Examiner",
   },
   en: {
     eyebrow: "Software factory",
@@ -219,6 +237,15 @@ const COPY = {
     noAutomation: "Not enough repeated patterns yet.",
     frequency: "times",
     minutesSaved: "min/month",
+    approvalQueue: "Approval queue",
+    noApprovals: "No pending approvals.",
+    pullRequest: "Pull request",
+    files: "Files",
+    additions: "Additions",
+    deletions: "Deletions",
+    checks: "Checks",
+    securityFindings: "Security findings",
+    reviewRun: "Review",
   },
 } as const
 
@@ -265,6 +292,7 @@ export default function FactoryPage() {
   const [connections, setConnections] = useState<AgentConnection[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [proposals, setProposals] = useState<AutomationProposal[]>([])
+  const [approvalQueue, setApprovalQueue] = useState<FactoryPendingApproval[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [detail, setDetail] = useState<FactoryRun | null>(null)
@@ -292,13 +320,14 @@ export default function FactoryPage() {
       return
     }
     try {
-      const [r, s, p, c, pr, proposals] = await Promise.all([
+      const [r, s, p, c, pr, proposals, approvals] = await Promise.all([
         api.listFactoryRuns(token, currentOrg.id),
         api.factoryStats(token, currentOrg.id),
         api.listFactoryAgents(token, currentOrg.id),
         api.listAgentConnections(token, currentOrg.id).catch(() => [] as AgentConnection[]),
         api.listProjects(token, currentOrg.id),
         api.factoryAutomation(token, currentOrg.id).catch(() => [] as AutomationProposal[]),
+        api.factoryPendingApprovals(token, currentOrg.id).catch(() => [] as FactoryPendingApproval[]),
       ])
       setRuns(r)
       setStats(s)
@@ -306,6 +335,7 @@ export default function FactoryPage() {
       setConnections(c)
       setProjects(pr)
       setProposals(proposals)
+      setApprovalQueue(approvals)
     } catch {
       toast.error(c.failed)
     } finally {
@@ -538,6 +568,36 @@ export default function FactoryPage() {
         <section className="space-y-4">
           <div className="rounded-2xl border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-primary" /> {c.approvalQueue}</h2>
+              <Badge variant={approvalQueue.length > 0 ? "warning" : "outline"}>{approvalQueue.length}</Badge>
+            </div>
+            {approvalQueue.length === 0 ? (
+              <p className="px-5 py-5 text-sm text-muted-foreground">{c.noApprovals}</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {approvalQueue.slice(0, 5).map((approval) => (
+                  <div key={approval.id} className="px-5 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium">{approval.run.task.title}</p>
+                      <Badge variant="warning">{approval.stage}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{approval.run.project.name} · {approval.run.agentProfile?.name ?? "—"}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openRun(approval.run.id)}>{c.reviewRun}</Button>
+                      {canManage && (
+                        <>
+                          <Button size="sm" onClick={() => act(approval.run.id, `queue-approve-${approval.id}`, () => api.approveFactoryRun(token!, currentOrg!.id, approval.run.id, "APPROVED", "Approved from the queue"))} disabled={Boolean(busy)}>{c.approve}</Button>
+                          <Button size="sm" variant="ghost" onClick={() => act(approval.run.id, `queue-reject-${approval.id}`, () => api.approveFactoryRun(token!, currentOrg!.id, approval.run.id, "REJECTED", "Rejected from the queue"))} disabled={Boolean(busy)}>{c.reject}</Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="rounded-2xl border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <h2 className="text-sm font-semibold">{c.agents}</h2>
               <Button size="sm" variant="outline" onClick={() => setAgentOpen(true)}><Plus className="h-3.5 w-3.5" /> {c.addAgent}</Button>
             </div>
@@ -714,6 +774,35 @@ export default function FactoryPage() {
                 <p className="mt-1 text-[11px] text-muted-foreground">{detail.repository?.name ?? c.noRepository}</p>
               </div>
             </div>
+
+            {detail.pullRequest && (
+              <div className="rounded-xl border border-border bg-card p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">{c.pullRequest} #{detail.pullRequest.number}</p>
+                  <Badge variant={detail.pullRequest.status === "MERGED" ? "success" : detail.pullRequest.status === "CLOSED" ? "outline" : "info"}>{detail.pullRequest.status}</Badge>
+                </div>
+                <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{detail.pullRequest.sourceBranch} → {detail.pullRequest.targetBranch}</p>
+                <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                  <span>{detail.pullRequest.changedFiles?.length ?? 0} {c.files}</span>
+                  <span className="text-success">+{detail.pullRequest.diffStats?.additions ?? 0} {c.additions}</span>
+                  <span className="text-danger">−{detail.pullRequest.diffStats?.deletions ?? 0} {c.deletions}</span>
+                  {detail.pullRequest.risk && <Badge variant={detail.pullRequest.risk === "high" ? "danger" : detail.pullRequest.risk === "medium" ? "warning" : "outline"}>{detail.pullRequest.risk}</Badge>}
+                </div>
+                {(detail.pullRequest.changedFiles?.length ?? 0) > 0 && (
+                  <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto font-mono text-[11px]">
+                    {detail.pullRequest.changedFiles.slice(0, 20).map((file) => (
+                      <li key={file.path} className="flex justify-between gap-2">
+                        <span className="truncate">{file.path}</span>
+                        <span className="shrink-0 text-muted-foreground">+{file.additions} −{file.deletions}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(detail.pullRequest.securityFindings?.length ?? 0) > 0 && (
+                  <p className="mt-2 text-xs text-danger">{c.securityFindings}: {detail.pullRequest.securityFindings.length}</p>
+                )}
+              </div>
+            )}
 
             {detail.error && (
               <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/5 p-3 text-sm text-danger">

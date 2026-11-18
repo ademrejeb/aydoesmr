@@ -567,3 +567,43 @@ export function branchName(input: {
   }
   return `${base}-${Date.now().toString(36)}`
 }
+
+// ------------------------------------------------------------------ //
+//  Secret detection                                                   //
+// ------------------------------------------------------------------ //
+
+export interface SecretFinding {
+  path: string
+  line: number
+  kind: string
+}
+
+const SECRET_PATTERNS: { kind: string; pattern: RegExp }[] = [
+  { kind: "aws_access_key", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
+  { kind: "private_key", pattern: /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/ },
+  { kind: "github_token", pattern: /\bgh[pousr]_[A-Za-z0-9]{36,}\b/ },
+  { kind: "slack_token", pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
+  { kind: "google_api_key", pattern: /\bAIza[0-9A-Za-z_-]{35}\b/ },
+  { kind: "stripe_secret", pattern: /\bsk_live_[0-9A-Za-z]{20,}\b/ },
+  { kind: "jwt", pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/ },
+]
+
+/**
+ * Scan only the patch content that is about to be committed. Findings never
+ * include the secret itself — only path, line and kind — so the gate evidence
+ * and trace cannot leak it.
+ */
+export function scanPatchForSecrets(files: { path: string; content: string }[]): SecretFinding[] {
+  const findings: SecretFinding[] = []
+  for (const file of files) {
+    const lines = file.content.split(/\r?\n/)
+    lines.forEach((line, index) => {
+      for (const rule of SECRET_PATTERNS) {
+        if (rule.pattern.test(line)) {
+          findings.push({ path: file.path, line: index + 1, kind: rule.kind })
+        }
+      }
+    })
+  }
+  return findings
+}

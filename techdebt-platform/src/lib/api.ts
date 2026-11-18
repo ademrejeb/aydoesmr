@@ -910,6 +910,49 @@ export interface FactoryRunSummary {
   plans: { version: number; approvalRequired: boolean; generatedBy: string }[]
   gates: { name: string; status: FactoryGateStatus }[]
   approvals: { id: string; stage: string }[]
+  pullRequest?: { number: number; status: string } | null
+}
+
+export interface FactoryPullRequest {
+  id: string
+  runId: string
+  repositoryId: string
+  number: number
+  title: string
+  body: string | null
+  sourceBranch: string
+  targetBranch: string
+  status: "OPEN" | "MERGED" | "CLOSED" | string
+  risk: string | null
+  changedFiles: { path: string; status: string; additions: number; deletions: number }[]
+  diffStats: { entries?: unknown[]; additions?: number; deletions?: number }
+  commitShas: string[]
+  findings: unknown[]
+  securityFindings: unknown[]
+  checks: { name: string; status: string; detail: string | null }[]
+  createdAt: string
+  updatedAt: string
+  mergedAt: string | null
+}
+
+export interface FactoryPendingApproval {
+  id: string
+  stage: string
+  status: string
+  requestedRole: string | null
+  requestedById: string | null
+  reason: string | null
+  createdAt: string
+  run: {
+    id: string
+    status: FactoryRunStatus
+    stage: string
+    branch: string | null
+    task: { id: string; title: string; priority: string }
+    project: { id: string; name: string }
+    agentProfile: { id: string; name: string; role: string } | null
+    plans: { version: number; summary: string }[]
+  }
 }
 
 export interface FactoryRun extends Omit<FactoryRunSummary, "plans" | "gates" | "approvals"> {
@@ -926,6 +969,7 @@ export interface FactoryRun extends Omit<FactoryRunSummary, "plans" | "gates" | 
   approvals: FactoryApproval[]
   events: FactoryEvent[]
   issueProfile: FactoryIssueProfile | null
+  pullRequest: FactoryPullRequest | null
 }
 
 export interface FactoryStats {
@@ -3360,6 +3404,19 @@ export const api = {
 
   factoryStats(token: string, orgId: string) {
     return request<FactoryStats>(`/organizations/${orgId}/factory/stats`, { token, orgId })
+  },
+
+  factoryPendingApprovals(token: string, orgId: string) {
+    return request<FactoryPendingApproval[]>(`/organizations/${orgId}/factory/approvals`, { token, orgId })
+  },
+
+  factoryPullRequests(token: string, orgId: string, status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : ""
+    return request<FactoryPullRequest[]>(`/organizations/${orgId}/factory/pull-requests${q}`, { token, orgId })
+  },
+
+  factoryPullRequest(token: string, orgId: string, runId: string) {
+    return request<FactoryPullRequest>(`/organizations/${orgId}/factory/runs/${runId}/pull-request`, { token, orgId })
   },
 
   listFactoryAgents(token: string, orgId: string) {

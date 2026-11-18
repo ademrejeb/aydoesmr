@@ -7,6 +7,7 @@ import {
   canTransition,
   findDuplicates,
   isProtectedPath,
+  scanPatchForSecrets,
   triageIssue,
   validatePatch,
   validatePlanDraft,
@@ -157,6 +158,17 @@ describe("patch safety", () => {
     assert.equal(validation.ok, false)
     assert.equal(validation.files.length, 0)
     assert.ok(validation.errors.length >= 3)
+  })
+
+  it("detects high-confidence secrets without exposing the value", () => {
+    const findings = scanPatchForSecrets([
+      { path: "src/config.ts", content: 'const key = "AKIA1234567890ABCDEF"\n' },
+      { path: "keys/id_rsa", content: "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n" },
+      { path: "src/clean.ts", content: "export const ok = true\n" },
+    ])
+    assert.equal(findings.length, 2)
+    assert.deepEqual(findings.map((finding) => finding.kind).sort(), ["aws_access_key", "private_key"])
+    assert.ok(findings.every((finding) => !JSON.stringify(finding).includes("AKIA1234567890ABCDEF")))
   })
 
   it("flags protected paths and accepts a normal file", () => {

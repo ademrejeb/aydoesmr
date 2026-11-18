@@ -37,6 +37,14 @@ export class OrgGuard implements CanActivate {
 
     const orgId = String(organizationId)
 
+    // Every tenant route carries the organization in `:id`. The header selects
+    // the tenant; the path must select the same one, otherwise a member of
+    // org B could reach org A's data by changing only the path.
+    const routeOrgId = (req.params as Record<string, string | undefined> | undefined)?.id
+    if (routeOrgId && routeOrgId !== orgId) {
+      throw new ForbiddenException("Organization header does not match the route")
+    }
+
     const member = await this.prisma.organizationMember.findUnique({
       where: { organizationId_userId: { organizationId: orgId, userId: user.id } },
     })
