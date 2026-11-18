@@ -5,6 +5,7 @@ import { MinRole } from "../../common/decorators/roles.decorator"
 import { OrgGuard } from "../../common/guards/org.guard"
 import type { AuthUser } from "../../common/interfaces/authenticated-request.interface"
 import {
+  AgentReviewDto,
   AutomationDecisionDto,
   ClassifyIssueDto,
   CreateAgentProfileDto,
@@ -115,6 +116,17 @@ export class FactoryController {
     @Body() dto: FactoryReviewDto
   ) {
     return this.factory.review(orgId, user.id, runId, dto)
+  }
+
+  @Post("runs/:runId/review/agent")
+  @MinRole(OrgRole.MANAGER)
+  reviewWithAgent(
+    @Param("id") orgId: string,
+    @CurrentUser() user: AuthUser,
+    @Param("runId") runId: string,
+    @Body() dto: AgentReviewDto
+  ) {
+    return this.factory.reviewWithAgent(orgId, user.id, runId, dto)
   }
 
   @Post("runs/:runId/merge")

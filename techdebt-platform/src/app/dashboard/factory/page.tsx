@@ -117,6 +117,7 @@ const COPY = {
     knowledgeContent: "المحتوى",
     category: "التصنيف",
     noKnowledge: "لا توجد معرفة مسجلة.",
+    aiReview: "مراجعة بالوكيل",
   },
   fr: {
     eyebrow: "Usine logicielle",
@@ -201,6 +202,7 @@ const COPY = {
     knowledgeContent: "Content",
     category: "Category",
     noKnowledge: "No knowledge recorded.",
+    aiReview: "AI review",
   },
   en: {
     eyebrow: "Software factory",
@@ -285,6 +287,7 @@ const COPY = {
     knowledgeContent: "Content",
     category: "Category",
     noKnowledge: "No knowledge recorded.",
+    aiReview: "AI review",
   },
 } as const
 
@@ -1086,6 +1089,11 @@ export default function FactoryPage() {
                     <Button variant="destructive" onClick={() => act(detail.id, "review-reject", () => api.reviewFactoryRun(token!, currentOrg!.id, detail.id, { decision: "REJECTED", reason: "Rejected from factory dashboard" }))} disabled={Boolean(busy)}>
                       <XCircle className="h-4 w-4" /> {c.reject}
                     </Button>
+                    {profiles.some((profile) => profile.role === "REVIEWER" && profile.status === "active") && (
+                      <Button variant="outline" onClick={() => act(detail.id, "ai-review", () => api.reviewFactoryRunWithAgent(token!, currentOrg!.id, detail.id, profiles.find((profile) => profile.role === "REVIEWER" && profile.status === "active")?.id))} disabled={Boolean(busy)}>
+                        <Bot className="h-4 w-4" /> {c.aiReview}
+                      </Button>
+                    )}
                   </>
                 )}
                 {detail.status === "READY_TO_MERGE" && canManage && (

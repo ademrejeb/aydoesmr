@@ -319,3 +319,9 @@ export class UpdateProjectKnowledgeDto {
   @IsString()
   projectId?: string | null
 }
+
+export class AgentReviewDto {
+  @IsOptional()
+  @IsString()
+  profileId?: string
+}

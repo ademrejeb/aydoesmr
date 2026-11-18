@@ -3448,6 +3448,15 @@ export const api = {
     })
   },
 
+  reviewFactoryRunWithAgent(token: string, orgId: string, runId: string, profileId?: string) {
+    return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}/review/agent`, {
+      method: "POST",
+      body: { profileId },
+      token,
+      orgId,
+    })
+  },
+
   mergeFactoryRun(token: string, orgId: string, runId: string) {
     return request<FactoryRun>(`/organizations/${orgId}/factory/runs/${runId}/merge`, {
       method: "POST",

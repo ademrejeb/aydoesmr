@@ -230,7 +230,16 @@ the selected content as untrusted data.
 names across repositories and returns shared dependencies with a risk level.
 This is dependency overlap, not a full cross-repository call graph.
 
-## 11. Pull requests and approval queue
+## 11. Independent AI review
+
+A REVIEWER profile can review a run through
+`POST /factory/runs/:runId/review/agent`. The reviewer must use a different
+profile and connection than the coding agent. The platform sends the real diff,
+plan and task context as untrusted data, records the agent cost, accepts only
+`APPROVED`/`REJECTED` plus findings, and applies the same review policy/gate as
+a human decision. A coding agent cannot review its own change.
+
+## 12. Pull requests and approval queue
 
 `FactoryPullRequest` is the review surface for a run. It is created after the
 patch commit and refreshed after gates and review. Diff stats and changed files
@@ -242,7 +251,7 @@ GitHub/GitLab sync is claimed.
 The dashboard exposes `GET /factory/approvals` as a queue with inline
 approve/reject for managers.
 
-## 12. Tenant isolation
+## 13. Tenant isolation
 
 `OrgGuard` binds the tenant twice: the `X-Organization-Id` header selects the
 membership, and the route's `:id` must match it. A mismatch is `403`, closing
@@ -250,7 +259,7 @@ the path/header split that would otherwise let a member of tenant B address
 tenant A's path. `npm run test:tenant` covers reads, writes, agent/policy
 management and member-vs-manager boundaries.
 
-## 13. Automation discovery
+## 14. Automation discovery
 
 `GET /factory/automation` groups the last 30 days of `AuditLog` by action and
 matches actionable templates (pipeline runs, AI actions, factory runs, triage,
@@ -262,7 +271,7 @@ complexity, risk, required permissions and a proposed workflow shape.
 workflow definition exists. This is deliberate: automation proposals are
 untrusted suggestions, never silent authority.
 
-## 14. What is intentionally not built yet
+## 15. What is intentionally not built yet
 
 - Containerized coding sandbox and arbitrary command execution.
 - Coverage/SonarQube/Checkmarx and a default dependency audit.

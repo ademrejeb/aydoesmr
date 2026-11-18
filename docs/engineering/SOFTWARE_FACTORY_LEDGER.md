@@ -33,6 +33,7 @@ Branch: `main` (working tree)
 | Project knowledge | Versioned `ProjectKnowledge`; CRUD endpoints; relevant entries selected by keyword overlap and attached to plans/AI prompts |
 | Cross-repo impact | Static dependency overlap across hosted `package.json` manifests; returns shared dependencies and risk |
 | Dependency audit gate | Optional `auditCommand` runs through the same isolated runner and creates `dependency_audit` gate |
+| Independent AI reviewer | `POST /runs/:runId/review/agent` selects a REVIEWER profile with a different connection, sends the diff/plan, records cost and applies the decision; self-review is rejected before dispatch |
 | Independent review + same-agent denial | `factory.review` deny rule returned HTTP 403 for the execution agent run |
 | Human merge approval | `factory.merge` returned `WAITING_APPROVAL`; approval produced `MERGED` |
 | Append-only run trace + audit log | `FactoryEvent`, `AuditLog`; event sequence verified |
@@ -103,6 +104,7 @@ POST   /organizations/:id/factory/runs/:runId/plan
 POST   /organizations/:id/factory/runs/:runId/approve
 POST   /organizations/:id/factory/runs/:runId/execute
 POST   /organizations/:id/factory/runs/:runId/review
+POST   /organizations/:id/factory/runs/:runId/review/agent
 POST   /organizations/:id/factory/runs/:runId/merge
 POST   /organizations/:id/factory/runs/:runId/cancel
 GET    /organizations/:id/factory/stats
@@ -139,6 +141,7 @@ POST   /organizations/:id/factory/issues/:taskId/classify
 | Runner scenario | `npm test` executed in a temp worktree → `tests PASSED`, exit 0, output captured; mock agent reported 150 tokens and a USD cost |
 | Knowledge/impact scenario | Knowledge entry selected into `plan.knowledgeRefs`; cross-repo impact returned a shared `typescript` dependency |
 | Runner unavailable | Without Docker and without local opt-in, `tests` becomes `BLOCKED`; no false pass |
+| AI review scenario | Reviewer profile with a different connection returned `APPROVED`; run moved `WAITING_REVIEW → READY_TO_MERGE`; 100 review tokens recorded |
 | UI scenario | logged in, opened `/dashboard/factory`, opened a merged run detail, full-page screenshots verified |
 
 Unit tests cover: policy priority/specificity/conditions/glob/overlap; triage
@@ -173,7 +176,6 @@ transitions; branch naming.
 | No coverage measurement | Tests execute, but coverage is not collected | Add coverage command/parser and a coverage threshold gate |
 | Pipelines are still simulated (pre-existing) | Cannot be used as CI evidence | Implement real step execution or integrate an external CI provider |
 | PR is internal only | No GitHub/GitLab push/sync or threaded comments | Add provider adapters on top of `FactoryPullRequest` |
-| AI review agent not dispatched | Only human review; same-agent denial enforced | Add REVIEWER profile dispatch and compare it to the execution run |
 | No deployment/monitoring/rollback | Factory stops at merge | Add environment/pipeline adapters and approval-gated deploy |
 | Automation proposals are not executable workflows | Discovery only | Add a workflow definition/trigger engine and activate approved proposals explicitly |
 | UI page is large (single file) | Maintainability | Extract plan/gates/automation panels into components after the surface stabilizes |
@@ -186,7 +188,6 @@ transitions; branch naming.
    deployment gate.
 4. Add coverage collection and a coverage threshold gate.
 5. Add a default dependency-audit adapter (OSV/npm audit).
-6. Add REVIEWER profile dispatch for AI review alongside human review.
-7. Add deployment orchestration, rollback and monitoring/self-healing.
-8. Activate approved automation proposals through a real workflow engine.
-9. Extract dashboard panels and add a dedicated approvals page.
+6. Add deployment orchestration, rollback and monitoring/self-healing.
+7. Activate approved automation proposals through a real workflow engine.
+8. Extract dashboard panels and add a dedicated approvals page.
