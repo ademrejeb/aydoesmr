@@ -40,7 +40,7 @@ async function upsertUser(input: { email: string; fullName: string; locale: stri
   })
 }
 
-async function upsertOrg(input: { name: string; slug: string }) {
+async function upsertOrg(input: { name: string; slug: string }, accountsOnly = false) {
   return prisma.organization.upsert({
     where: { slug: input.slug },
     create: {
@@ -52,7 +52,7 @@ async function upsertOrg(input: { name: string; slug: string }) {
       timezone: "Africa/Tunis",
       status: "active",
       billingEmail: "billing@techverse.dev",
-      billing: { create: { plan: "pro", seats: 25, usageLimit: 5000, usageThisPeriod: 412, status: "active" } },
+      billing: { create: { plan: "pro", seats: 25, usageLimit: 5000, usageThisPeriod: accountsOnly ? 0 : 412, status: "active" } },
     },
     update: { plan: "pro", status: "active" },
     include: { members: true },
@@ -82,7 +82,10 @@ async function main() {
   //  Organization: TechVerse Studio
   // -----------------------------------------------------------------
   console.log("[seed] creating TechVerse Studio...")
-  const studioOrg = await upsertOrg({ name: "TechVerse Studio", slug: "techverse-studio" })
+  const studioOrg = await upsertOrg(
+    { name: "TechVerse Studio", slug: "techverse-studio" },
+    process.argv.includes("--accounts"),
+  )
 
   // Ensure billing row exists
   const billing = await prisma.billing.findUnique({ where: { organizationId: studioOrg.id } })
@@ -96,6 +99,12 @@ async function main() {
   for (const m of STUDIO_MEMBERSHIP) {
     const user = byEmail[m.email]
     if (user) await upsertMembership(studioOrg.id, user.id, m.role, m.title)
+  }
+
+  // Demo production: accounts only, no projects, scans, runs or tasks.
+  if (process.argv.includes("--accounts")) {
+    console.log("[seed] accounts only: users, organization, memberships")
+    return
   }
 
   // -----------------------------------------------------------------
